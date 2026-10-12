@@ -25,6 +25,7 @@ uvicorn app.main:app --reload --port 8080
 
 Once the server is running:
 - Web UI for editing items: `http://localhost:8000/`
+- Checklist UI: `http://localhost:8000/checklist`
 - Interactive API docs: `http://localhost:8000/docs`
 
 ## Architecture
@@ -35,6 +36,7 @@ app/
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
   main.py       FastAPI app; creates tables on startup, defines all routes, serves the web UI at /
   static/index.html  Single-file web UI (plain HTML/JS, no build step) that calls the /items API
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group; clicking toggles `activated` via PUT /items/{id}
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
@@ -80,6 +82,7 @@ python3 -m client delete 3
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Web UI |
+| GET | `/checklist` | Checklist UI |
 | GET | `/items` | List all items; filter via `?type=`, `?group=`, `?active=`, `?activated=` query params |
 | GET | `/items/{id}` | Fetch a single item |
 | POST | `/items` | Create an item (201) |

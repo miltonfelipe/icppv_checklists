@@ -13,12 +13,19 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ICPPV Checklists API")
 
-INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+STATIC_DIR = Path(__file__).parent / "static"
+INDEX_HTML = STATIC_DIR / "index.html"
+CHECKLIST_HTML = STATIC_DIR / "checklist.html"
 
 
 @app.get("/", include_in_schema=False)
 def web_ui():
     return FileResponse(INDEX_HTML)
+
+
+@app.get("/checklist", include_in_schema=False)
+def checklist_ui():
+    return FileResponse(CHECKLIST_HTML)
 
 
 @app.get("/items", response_model=List[ItemResponse])

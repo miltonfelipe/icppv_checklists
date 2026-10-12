@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICPPV Checklist</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7280;
+    --border: #d9dde3; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a;
+    --done-bg: #dcfce7; --done-text: #166534;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1d2128; --text: #e6e8eb; --muted: #9aa1ab;
+      --border: #333a44; --accent: #60a5fa; --danger: #f87171; --ok: #4ade80;
+      --done-bg: #14532d; --done-text: #bbf7d0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .toolbar label { color: var(--muted); font-size: 13px; }
+  select { font: inherit; color: var(--text); background: var(--panel);
+           border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-width: 180px; }
+  #progress { color: var(--muted); font-size: 13px; }
+  #status { min-height: 1.4em; margin-bottom: 8px; color: var(--danger); }
+  section { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; }
+  h2 .count { color: var(--muted); font-weight: normal; font-size: 13px; }
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  li button { width: 100%; text-align: left; font: inherit; color: var(--text);
+              background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+              padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: center; }
+  li button:hover { border-color: var(--accent); }
+  li button::before { content: ""; flex: none; width: 16px; height: 16px;
+                      border: 2px solid var(--border); border-radius: 4px; }
+  li button.done { background: var(--done-bg); color: var(--done-text); border-color: var(--ok); }
+  li button.done::before { content: "✓"; border-color: var(--ok); background: var(--ok);
+                           color: var(--panel); font-size: 12px; line-height: 12px; text-align: center; }
+  li button.done span { text-decoration: line-through; }
+  li button:disabled { opacity: .6; cursor: progress; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ICPPV Checklist</h1>
+    <span id="progress"></span>
+  </header>
+  <div class="toolbar">
+    <label for="type">Checklist</label>
+    <select id="type"><option value="">All</option></select>
+  </div>
+  <div id="status"></div>
+  <div id="groups"><p class="muted">Loading…</p></div>
+</main>
+
+<script>
+const groupsEl = document.getElementById("groups");
+const statusEl = document.getElementById("status");
+const progressEl = document.getElementById("progress");
+const typeEl = document.getElementById("type");
+let allItems = [];
+let items = [];
+
+// The selected checklist is kept in the URL (?type=...) so it survives reloads and can be bookmarked.
+function selectedType() { return new URLSearchParams(location.search).get("type") || ""; }
+
+function renderTypeOptions() {
+  const current = selectedType();
+  const types = [...new Set(allItems.map(i => i.type))].sort((a, b) => a.localeCompare(b));
+  typeEl.replaceChildren(new Option("All", ""), ...types.map(t => new Option(t, t)));
+  typeEl.value = types.includes(current) ? current : "";
+}
+
+function applyFilter() {
+  const type = typeEl.value;
+  items = type ? allItems.filter(i => i.type === type) : allItems;
+  render();
+}
+
+typeEl.addEventListener("change", () => {
+  const url = new URL(location.href);
+  if (typeEl.value) url.searchParams.set("type", typeEl.value);
+  else url.searchParams.delete("type");
+  history.replaceState(null, "", url);
+  applyFilter();
+});
+
+function setStatus(msg) { statusEl.textContent = msg || ""; }
+
+async function api(path, options = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+function render() {
+  const done = items.filter(i => i.activated).length;
+  progressEl.textContent = items.length ? `${done} / ${items.length} done` : "";
+  if (!items.length) {
+    groupsEl.innerHTML = '<p class="muted">No active items.</p>';
+    return;
+  }
+
+  const byGroup = new Map();
+  for (const item of items) {
+    if (!byGroup.has(item.group)) byGroup.set(item.group, []);
+    byGroup.get(item.group).push(item);
+  }
+
+  groupsEl.replaceChildren();
+  for (const group of [...byGroup.keys()].sort((a, b) => a.localeCompare(b))) {
+    const groupItems = byGroup.get(group);
+    const section = document.createElement("section");
+    const h2 = document.createElement("h2");
+    h2.textContent = group;
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = `${groupItems.filter(i => i.activated).length} / ${groupItems.length}`;
+    h2.append(count);
+
+    const ul = document.createElement("ul");
+    for (const item of groupItems) {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = item.activated ? "done" : "";
+      btn.setAttribute("aria-pressed", item.activated);
+      const text = document.createElement("span");
+      text.textContent = item.description;
+      btn.append(text);
+      btn.addEventListener("click", () => toggle(item, btn));
+      li.append(btn);
+      ul.append(li);
+    }
+    section.append(h2, ul);
+    groupsEl.append(section);
+  }
+}
+
+async function toggle(item, btn) {
+  btn.disabled = true;
+  try {
+    const updated = await api(`/items/${item.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ activated: !item.activated }),
+    });
+    Object.assign(item, updated);
+    setStatus("");
+    render();
+  } catch (e) {
+    setStatus(`Could not update "${item.description}": ${e.message}`);
+    btn.disabled = false;
+  }
+}
+
+async function load() {
+  try {
+    allItems = await api("/items?active=true");
+    allItems.sort((a, b) => a.id - b.id);
+    setStatus("");
+    renderTypeOptions();
+    applyFilter();
+  } catch (e) {
+    setStatus(`Could not load items: ${e.message}`);
+  }
+}
+
+load();
+</script>
+</body>
+</html>
