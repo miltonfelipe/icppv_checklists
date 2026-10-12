@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICPPV Checklists</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7280;
+    --border: #d9dde3; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1d2128; --text: #e6e8eb; --muted: #9aa1ab;
+      --border: #333a44; --accent: #60a5fa; --danger: #f87171; --ok: #4ade80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  section { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+  input, select, button { font: inherit; color: var(--text); background: var(--panel);
+                          border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+  input[type=checkbox] { width: 18px; height: 18px; padding: 0; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  .wide { flex: 1 1 260px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td input:not([type=checkbox]) { width: 100%; min-width: 90px; }
+  td.desc input { min-width: 220px; }
+  td.actions { white-space: nowrap; }
+  tr.dirty { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .muted { color: var(--muted); }
+  #status { min-height: 1.4em; margin-bottom: 8px; }
+  #status.err { color: var(--danger); }
+  #status.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>ICPPV Checklists</h1>
+  <div id="status"></div>
+
+  <section>
+    <h2>Add item</h2>
+    <form id="create" class="row">
+      <label>Type <input name="type" required></label>
+      <label>Group <input name="group" required></label>
+      <label class="wide">Description <input name="description" required></label>
+      <label>Active <input type="checkbox" name="active" checked></label>
+      <label>Activated <input type="checkbox" name="activated"></label>
+      <button class="primary" type="submit">Add</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Items</h2>
+    <form id="filters" class="row" style="margin-bottom:10px">
+      <label>Type <input name="type" list="types"></label>
+      <label>Group <input name="group" list="groups"></label>
+      <label>Active
+        <select name="active">
+          <option value="">Any</option><option value="true">Yes</option><option value="false">No</option>
+        </select>
+      </label>
+      <label>Activated
+        <select name="activated">
+          <option value="">Any</option><option value="true">Yes</option><option value="false">No</option>
+        </select>
+      </label>
+      <button type="submit">Filter</button>
+      <button type="button" id="clear">Clear</button>
+      <span class="muted" id="count"></span>
+    </form>
+    <datalist id="types"></datalist>
+    <datalist id="groups"></datalist>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>ID</th><th>Type</th><th>Group</th><th>Description</th>
+          <th>Active</th><th>Activated</th><th>Time</th><th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const FIELDS = ["type", "group", "description", "active", "activated", "time"];
+const BOOLS = ["active", "activated"];
+
+function status(msg, kind = "") {
+  const el = $("#status");
+  el.textContent = msg;
+  el.className = kind;
+  if (kind === "ok") setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 2500);
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = JSON.stringify((await res.json()).detail); } catch {}
+    throw new Error(`${method} ${path} failed (${res.status}): ${detail}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// API returns "2026-10-12T14:03:22" (or with fractional seconds); datetime-local wants "YYYY-MM-DDTHH:MM:SS".
+const toInput = (v) => (v ? v.slice(0, 19) : "");
+const fromInput = (v) => (v ? v : null);
+
+function cellInput(field, value) {
+  const input = document.createElement("input");
+  input.name = field;
+  if (BOOLS.includes(field)) {
+    input.type = "checkbox";
+    input.checked = value;
+  } else if (field === "time") {
+    input.type = "datetime-local";
+    input.step = "1";
+    input.value = toInput(value);
+  } else {
+    input.value = value ?? "";
+  }
+  return input;
+}
+
+function readRow(tr) {
+  const out = {};
+  for (const f of FIELDS) {
+    const el = tr.querySelector(`[name="${f}"]`);
+    out[f] = BOOLS.includes(f) ? el.checked
+           : f === "time" ? fromInput(el.value)
+           : el.value.trim();
+  }
+  return out;
+}
+
+function renderRow(item) {
+  const tr = document.createElement("tr");
+  tr.dataset.id = item.id;
+  const idTd = document.createElement("td");
+  idTd.textContent = item.id;
+  tr.append(idTd);
+  for (const f of FIELDS) {
+    const td = document.createElement("td");
+    if (f === "description") td.className = "desc";
+    td.append(cellInput(f, item[f]));
+    tr.append(td);
+  }
+  const actions = document.createElement("td");
+  actions.className = "actions";
+  const save = Object.assign(document.createElement("button"), { textContent: "Save", className: "primary", disabled: true });
+  const del = Object.assign(document.createElement("button"), { textContent: "Delete", className: "danger" });
+  actions.append(save, " ", del);
+  tr.append(actions);
+
+  const markDirty = () => { tr.classList.add("dirty"); save.disabled = false; };
+  tr.addEventListener("input", markDirty);
+  tr.addEventListener("change", markDirty);
+  tr.addEventListener("keydown", (e) => { if (e.key === "Enter" && !save.disabled) save.click(); });
+
+  save.onclick = async () => {
+    try {
+      const updated = await api("PUT", `/items/${item.id}`, readRow(tr));
+      tr.replaceWith(renderRow(updated));
+      status(`Saved item ${item.id}`, "ok");
+    } catch (e) { status(e.message, "err"); }
+  };
+  del.onclick = async () => {
+    if (!confirm(`Delete item ${item.id}: "${item.description}"?`)) return;
+    try {
+      await api("DELETE", `/items/${item.id}`);
+      tr.remove();
+      status(`Deleted item ${item.id}`, "ok");
+      load();
+    } catch (e) { status(e.message, "err"); }
+  };
+  return tr;
+}
+
+async function load() {
+  const params = new URLSearchParams();
+  for (const [k, v] of new FormData($("#filters"))) if (v) params.set(k, v);
+  try {
+    const items = await api("GET", "/items" + (params.size ? "?" + params : ""));
+    $("#rows").replaceChildren(...items.map(renderRow));
+    $("#count").textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
+    if (!params.size) fillSuggestions(items);
+  } catch (e) { status(e.message, "err"); }
+}
+
+function fillSuggestions(items) {
+  for (const [field, id] of [["type", "#types"], ["group", "#groups"]]) {
+    const values = [...new Set(items.map((i) => i[field]))].sort();
+    $(id).replaceChildren(...values.map((v) => Object.assign(document.createElement("option"), { value: v })));
+  }
+}
+
+$("#filters").addEventListener("submit", (e) => { e.preventDefault(); load(); });
+$("#clear").onclick = () => { $("#filters").reset(); load(); };
+
+$("#create").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  try {
+    const item = await api("POST", "/items", {
+      type: f.type.value.trim(),
+      group: f.group.value.trim(),
+      description: f.description.value.trim(),
+      active: f.active.checked,
+      activated: f.activated.checked,
+    });
+    f.description.value = "";
+    f.activated.checked = false;
+    f.description.focus();
+    status(`Created item ${item.id}`, "ok");
+    load();
+  } catch (e) { status(e.message, "err"); }
+});
+
+load();
+</script>
+</body>
+</html>
