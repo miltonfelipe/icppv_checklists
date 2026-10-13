@@ -9,6 +9,10 @@ class ChecklistClient:
         url = base_url or os.environ.get("ICPPV_SERVER_URL", "http://localhost:8000")
         self.base_url = url.rstrip("/")
         self.session = requests.Session()
+        # Creating, editing and deleting items needs the server's admin login.
+        password = os.environ.get("ICPPV_ADMIN_PASSWORD")
+        if password:
+            self.session.auth = (os.environ.get("ICPPV_ADMIN_USER", "admin"), password)
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -69,6 +73,12 @@ class ChecklistClient:
 
     def update_item(self, item_id: int, **fields: Any) -> dict:
         r = self.session.put(self._url(f"/items/{item_id}"), json=fields)
+        r.raise_for_status()
+        return r.json()
+
+    def set_activated(self, item_id: int, activated: bool) -> dict:
+        """Mark an item done / not done (no admin login needed)."""
+        r = self.session.put(self._url(f"/items/{item_id}/activated"), json={"activated": activated})
         r.raise_for_status()
         return r.json()
 

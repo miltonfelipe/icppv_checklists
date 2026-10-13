@@ -1,30 +1,63 @@
+import os
+import secrets
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
-from app.models import ChecklistItem, ItemCreate, ItemResponse, ItemUpdate
+from app.models import ActivatedUpdate, ChecklistItem, ItemCreate, ItemResponse, ItemUpdate
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ICPPV Checklists API")
 
 STATIC_DIR = Path(__file__).parent / "static"
-INDEX_HTML = STATIC_DIR / "index.html"
+ADMIN_HTML = STATIC_DIR / "admin.html"
 CHECKLIST_HTML = STATIC_DIR / "checklist.html"
+
+ADMIN_REALM = "ICPPV admin"
+basic_auth = HTTPBasic(realm=ADMIN_REALM)
+
+
+def require_admin(credentials: HTTPBasicCredentials = Depends(basic_auth)):
+    """HTTP Basic auth against ICPPV_ADMIN_USER / ICPPV_ADMIN_PASSWORD.
+
+    Editing is disabled entirely while no password is configured.
+    """
+    password = os.environ.get("ICPPV_ADMIN_PASSWORD")
+    if not password:
+        raise HTTPException(
+            status_code=503,
+            detail="Editing is disabled: set ICPPV_ADMIN_PASSWORD on the server",
+        )
+    user = os.environ.get("ICPPV_ADMIN_USER", "admin")
+    user_ok = secrets.compare_digest(credentials.username.encode(), user.encode())
+    password_ok = secrets.compare_digest(credentials.password.encode(), password.encode())
+    if not (user_ok and password_ok):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password",
+            headers={"WWW-Authenticate": f'Basic realm="{ADMIN_REALM}"'},
+        )
 
 
 @app.get("/", include_in_schema=False)
-def web_ui():
-    return FileResponse(INDEX_HTML)
+def checklist_ui():
+    return FileResponse(CHECKLIST_HTML)
 
 
 @app.get("/checklist", include_in_schema=False)
-def checklist_ui():
-    return FileResponse(CHECKLIST_HTML)
+def old_checklist_url():
+    return RedirectResponse("/")
+
+
+@app.get("/admin", include_in_schema=False, dependencies=[Depends(require_admin)])
+def admin_ui():
+    return FileResponse(ADMIN_HTML)
 
 
 @app.get("/items", response_model=List[ItemResponse])
@@ -57,7 +90,9 @@ def get_item(item_id: int, db: Session = Depends(get_db)):
     return item
 
 
-@app.post("/items", response_model=ItemResponse, status_code=201)
+@app.post(
+    "/items", response_model=ItemResponse, status_code=201, dependencies=[Depends(require_admin)]
+)
 def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
     item = ChecklistItem(**payload.model_dump())
     db.add(item)
@@ -66,7 +101,7 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
     return item
 
 
-@app.put("/items/{item_id}", response_model=ItemResponse)
+@app.put("/items/{item_id}", response_model=ItemResponse, dependencies=[Depends(require_admin)])
 def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)):
     item = db.get(ChecklistItem, item_id)
     if item is None:
@@ -78,7 +113,19 @@ def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
     return item
 
 
-@app.delete("/items/{item_id}", status_code=204)
+@app.put("/items/{item_id}/activated", response_model=ItemResponse)
+def set_activated(item_id: int, payload: ActivatedUpdate, db: Session = Depends(get_db)):
+    """Mark an item done / not done. Open (no login) so the checklist can be used by anyone."""
+    item = db.get(ChecklistItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    item.activated = payload.activated
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.delete("/items/{item_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_item(item_id: int, db: Session = Depends(get_db)):
     item = db.get(ChecklistItem, item_id)
     if item is None:

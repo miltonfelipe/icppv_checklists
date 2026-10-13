@@ -16,7 +16,8 @@ sudo apt install python3-pip python3-venv
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Run the server (reloads on file change)
+# Run the server (reloads on file change); editing needs an admin password
+export ICPPV_ADMIN_PASSWORD='choose-a-password'   # ICPPV_ADMIN_USER defaults to "admin"
 uvicorn app.main:app --reload
 
 # Run on a specific port
@@ -24,8 +25,8 @@ uvicorn app.main:app --reload --port 8080
 ```
 
 Once the server is running:
-- Web UI for editing items: `http://localhost:8000/`
-- Checklist UI: `http://localhost:8000/checklist`
+- Checklist UI (open): `http://localhost:8000/`
+- Editor UI (admin login): `http://localhost:8000/admin`
 - Interactive API docs: `http://localhost:8000/docs`
 
 ## Architecture
@@ -34,9 +35,9 @@ Once the server is running:
 app/
   database.py   SQLAlchemy engine, session factory, and get_db dependency
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
-  main.py       FastAPI app; creates tables on startup, defines all routes, serves the web UI at /
-  static/index.html  Single-file web UI (plain HTML/JS, no build step) that calls the /items API
-  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group, in `sequence` order; clicking toggles `activated` via PUT /items/{id}
+  main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin)
+  static/admin.html  Editor UI at /admin (plain HTML/JS, no build step) that calls the /items API
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group, in `sequence` order; clicking toggles `activated` via the open PUT /items/{id}/activated
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
@@ -58,6 +59,8 @@ pip install -r client/requirements.txt
 
 # Point at the server (set once, or pass --url on every command)
 export ICPPV_SERVER_URL=http://<server-ip>:8000
+# Needed for create/update/delete (update with only --activated/--no-activated works without it)
+export ICPPV_ADMIN_USER=admin ICPPV_ADMIN_PASSWORD='the-server-password'
 
 # Run
 python3 -m client --help
@@ -83,10 +86,14 @@ python3 -m client delete 3
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | Web UI |
-| GET | `/checklist` | Checklist UI |
+| GET | `/` | Checklist UI (open) |
+| GET | `/admin` | Editor UI (admin) |
+| GET | `/checklist` | Redirects to `/` |
 | GET | `/items` | List all items; filter via `?type=`, `?group=`, `?active=`, `?activated=` query params |
 | GET | `/items/{id}` | Fetch a single item |
-| POST | `/items` | Create an item (201) |
-| PUT | `/items/{id}` | Partial update |
-| DELETE | `/items/{id}` | Delete (204) |
+| POST | `/items` | Create an item (201) (admin) |
+| PUT | `/items/{id}` | Partial update (admin) |
+| PUT | `/items/{id}/activated` | Set only `activated`, body `{"activated": true}` (open) |
+| DELETE | `/items/{id}` | Delete (204) (admin) |
+
+"(admin)" routes require HTTP Basic auth matching `ICPPV_ADMIN_USER` (default `admin`) / `ICPPV_ADMIN_PASSWORD`; with no password set they return 503.

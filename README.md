@@ -12,16 +12,27 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Every time: activate the venv and start the server
+# Every time: activate the venv, set the admin login and start the server
 source .venv/bin/activate
+export ICPPV_ADMIN_USER=admin              # optional, defaults to "admin"
+export ICPPV_ADMIN_PASSWORD='choose-a-password'
 uvicorn app.main:app --reload
 ```
 
 Once it's running, open:
 
-- **http://localhost:8000/** for the web UI to edit items
-- **http://localhost:8000/checklist** for the checklist: active items grouped by group, in `sequence` order; pick a checklist (`type`) from the dropdown or "All"; click an item to mark it done (sets `activated`), click again to undo
+- **http://localhost:8000/** for the checklist (open to everyone): active items grouped by group, in `sequence` order; pick a checklist (`type`) from the dropdown or "All"; click an item to mark it done (sets `activated`), click again to undo
+- **http://localhost:8000/admin** for the editor (asks for the admin login): create, edit and delete items
 - **http://localhost:8000/docs** for the interactive API docs
+
+### Admin login
+
+Creating, editing and deleting items (the `/admin` page and the `POST`/`PUT`/`DELETE /items` API) require the
+login set by `ICPPV_ADMIN_USER` / `ICPPV_ADMIN_PASSWORD`. If no password is set, editing is disabled.
+Reading items and marking them done/not done stay open.
+
+The login uses HTTP Basic auth, so over plain `http://` the password is not encrypted. If the server is reachable
+from the internet, put it behind HTTPS (e.g. a reverse proxy such as Caddy or nginx).
 
 ### Options
 
@@ -43,4 +54,8 @@ pip install -r client/requirements.txt
 
 export ICPPV_SERVER_URL=http://<server-ip>:8000
 python3 -m client --help
+
+# Needed for create / update / delete (marking items done with `update ID --activated` works without it)
+export ICPPV_ADMIN_USER=admin
+export ICPPV_ADMIN_PASSWORD='the-server-password'
 ```

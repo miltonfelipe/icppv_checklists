@@ -40,6 +40,8 @@ def _abort(exc: requests.HTTPError) -> None:
     except Exception:
         detail = str(exc)
     console.print(f"[red]Error {exc.response.status_code}:[/red] {detail}")
+    if exc.response.status_code == 401:
+        console.print("[yellow]Set ICPPV_ADMIN_USER and ICPPV_ADMIN_PASSWORD to the server's admin login.[/yellow]")
     raise typer.Exit(1)
 
 
@@ -154,7 +156,12 @@ def update_item(
         raise typer.Exit(1)
 
     try:
-        item = _client(url).update_item(item_id, **fields)
+        client = _client(url)
+        if fields.keys() == {"activated"}:
+            # Ticking an item done / not done doesn't need the admin login.
+            item = client.set_activated(item_id, activated)
+        else:
+            item = client.update_item(item_id, **fields)
     except requests.HTTPError as e:
         _abort(e)
     console.print(f"[green]Updated item id={item['id']}[/green]")

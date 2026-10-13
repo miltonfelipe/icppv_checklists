@@ -63,6 +63,10 @@ class ItemUpdate(BaseModel):
     sequence: Optional[int] = None
 
 
+class ActivatedUpdate(BaseModel):
+    activated: bool
+
+
 class ItemResponse(BaseModel):
     id: int
     type: str

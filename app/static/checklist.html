@@ -150,7 +150,7 @@ function render() {
 async function toggle(item, btn) {
   btn.disabled = true;
   try {
-    const updated = await api(`/items/${item.id}`, {
+    const updated = await api(`/items/${item.id}/activated`, {
       method: "PUT",
       body: JSON.stringify({ activated: !item.activated }),
     });
