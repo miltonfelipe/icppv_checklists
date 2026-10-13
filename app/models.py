@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import time as TimeOfDay
 from typing import Optional
 
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, text
+from sqlalchemy import Boolean, Column, Integer, String, Time, text
 
 from app.database import Base
 
@@ -16,7 +16,8 @@ class ChecklistItem(Base):
     description = Column(String, nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     activated = Column(Boolean, default=False, server_default=text("0"), nullable=False)
-    time = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    # Time of day the task must be performed (no date); optional.
+    time = Column(Time, nullable=True)
 
 
 class ItemCreate(BaseModel):
@@ -25,7 +26,7 @@ class ItemCreate(BaseModel):
     description: str
     active: bool = True
     activated: bool = False
-    time: Optional[datetime] = None
+    time: Optional[TimeOfDay] = None
 
 
 class ItemUpdate(BaseModel):
@@ -34,7 +35,7 @@ class ItemUpdate(BaseModel):
     description: Optional[str] = None
     active: Optional[bool] = None
     activated: Optional[bool] = None
-    time: Optional[datetime] = None
+    time: Optional[TimeOfDay] = None
 
 
 class ItemResponse(BaseModel):
@@ -44,6 +45,6 @@ class ItemResponse(BaseModel):
     description: str
     active: bool
     activated: bool
-    time: Optional[datetime]
+    time: Optional[TimeOfDay]
 
     model_config = {"from_attributes": True}

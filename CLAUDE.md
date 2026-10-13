@@ -44,7 +44,7 @@ client/
 checklists.db   SQLite file created at runtime in the repo root
 ```
 
-The database has a single table `items` with columns: `id, type, group, description, active, activated, time`. `active` and `activated` are booleans; `time` is a datetime.
+The database has a single table `items` with columns: `id, type, group, description, active, activated, time`. `active` and `activated` are booleans; `time` is an optional time of day (`HH:MM`, no date) at which the task must be performed.
 
 `group` is a SQL reserved word — the ORM column is declared with an explicit name `Column("group", String)` so SQLAlchemy quotes it correctly.
 
@@ -74,6 +74,7 @@ python3 -m client create                        # interactive prompts
 python3 -m client create --type safety --group ops --description "Check valve"
 python3 -m client update 3 --no-active
 python3 -m client update 3 --activated
+python3 -m client update 3 --time 08:30           # time of day the task must be performed
 python3 -m client delete 3
 ```
 

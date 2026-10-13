@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -58,10 +57,7 @@ def get_item(item_id: int, db: Session = Depends(get_db)):
 
 @app.post("/items", response_model=ItemResponse, status_code=201)
 def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
-    data = payload.model_dump()
-    if data["time"] is None:
-        data["time"] = datetime.utcnow()
-    item = ChecklistItem(**data)
+    item = ChecklistItem(**payload.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)

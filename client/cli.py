@@ -94,7 +94,7 @@ def create_item(
     description: str = typer.Option(..., prompt=True, help="Description"),
     active: bool = typer.Option(True, help="Active flag"),
     activated: bool = typer.Option(False, help="Activated flag"),
-    time: Optional[str] = typer.Option(None, help="Timestamp (ISO 8601)"),
+    time: Optional[str] = typer.Option(None, help="Time of day the task must be performed (HH:MM)"),
     url: Optional[str] = typer.Option(None, "--url", "-u", envvar="ICPPV_SERVER_URL"),
 ):
     """Create a new checklist item."""
@@ -125,7 +125,7 @@ def update_item(
     description: Optional[str] = typer.Option(None, help="New description"),
     active: Optional[bool] = typer.Option(None, help="New active flag"),
     activated: Optional[bool] = typer.Option(None, help="New activated flag"),
-    time: Optional[str] = typer.Option(None, help="New timestamp (ISO 8601)"),
+    time: Optional[str] = typer.Option(None, help="New time of day (HH:MM)"),
     url: Optional[str] = typer.Option(None, "--url", "-u", envvar="ICPPV_SERVER_URL"),
 ):
     """Update fields of an existing item (only supplied fields are changed)."""

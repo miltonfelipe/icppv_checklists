@@ -60,6 +60,7 @@
       <label class="wide">Description <input name="description" required></label>
       <label>Active <input type="checkbox" name="active" checked></label>
       <label>Activated <input type="checkbox" name="activated"></label>
+      <label>Time <input type="time" name="time"></label>
       <button class="primary" type="submit">Add</button>
     </form>
   </section>
@@ -123,8 +124,8 @@ async function api(method, path, body) {
   return res.status === 204 ? null : res.json();
 }
 
-// API returns "2026-10-12T14:03:22" (or with fractional seconds); datetime-local wants "YYYY-MM-DDTHH:MM:SS".
-const toInput = (v) => (v ? v.slice(0, 19) : "");
+// API returns a time of day like "14:30:00"; the time input works in "HH:MM".
+const toInput = (v) => (v ? v.slice(0, 5) : "");
 const fromInput = (v) => (v ? v : null);
 
 function cellInput(field, value) {
@@ -134,8 +135,7 @@ function cellInput(field, value) {
     input.type = "checkbox";
     input.checked = value;
   } else if (field === "time") {
-    input.type = "datetime-local";
-    input.step = "1";
+    input.type = "time";
     input.value = toInput(value);
   } else {
     input.value = value ?? "";
@@ -228,6 +228,7 @@ $("#create").addEventListener("submit", async (e) => {
       description: f.description.value.trim(),
       active: f.active.checked,
       activated: f.activated.checked,
+      time: fromInput(f.time.value),
     });
     f.description.value = "";
     f.activated.checked = false;
