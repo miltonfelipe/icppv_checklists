@@ -20,7 +20,7 @@ uvicorn app.main:app --reload
 Once it's running, open:
 
 - **http://localhost:8000/** for the web UI to edit items
-- **http://localhost:8000/checklist** for the checklist: active items grouped by group; pick a checklist (`type`) from the dropdown or "All"; click an item to mark it done (sets `activated`), click again to undo
+- **http://localhost:8000/checklist** for the checklist: active items grouped by group, in `sequence` order; pick a checklist (`type`) from the dropdown or "All"; click an item to mark it done (sets `activated`), click again to undo
 - **http://localhost:8000/docs** for the interactive API docs
 
 ### Options

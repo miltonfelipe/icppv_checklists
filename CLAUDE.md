@@ -36,7 +36,7 @@ app/
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
   main.py       FastAPI app; creates tables on startup, defines all routes, serves the web UI at /
   static/index.html  Single-file web UI (plain HTML/JS, no build step) that calls the /items API
-  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group; clicking toggles `activated` via PUT /items/{id}
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group, in `sequence` order; clicking toggles `activated` via PUT /items/{id}
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
@@ -44,7 +44,7 @@ client/
 checklists.db   SQLite file created at runtime in the repo root
 ```
 
-The database has a single table `items` with columns: `id, type, group, description, active, activated, time`. `active` and `activated` are booleans; `time` is an optional time of day (`HH:MM`, no date) at which the task must be performed.
+The database has a single table `items` with columns: `id, type, group, description, active, activated, time, sequence`. `active` and `activated` are booleans; `time` is an optional time of day (`HH:MM`, no date) at which the task must be performed; `sequence` is an optional integer giving the item's position in its checklist (items without one sort last). `GET /items` returns items ordered by `sequence`, then `id`.
 
 `group` is a SQL reserved word — the ORM column is declared with an explicit name `Column("group", String)` so SQLAlchemy quotes it correctly.
 
@@ -75,6 +75,7 @@ python3 -m client create --type safety --group ops --description "Check valve"
 python3 -m client update 3 --no-active
 python3 -m client update 3 --activated
 python3 -m client update 3 --time 08:30           # time of day the task must be performed
+python3 -m client update 3 --sequence 2           # position in the checklist
 python3 -m client delete 3
 ```
 

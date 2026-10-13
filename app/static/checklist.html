@@ -117,7 +117,8 @@ function render() {
   }
 
   groupsEl.replaceChildren();
-  for (const group of [...byGroup.keys()].sort((a, b) => a.localeCompare(b))) {
+  // Groups appear in the order of their first item in the sequence.
+  for (const group of byGroup.keys()) {
     const groupItems = byGroup.get(group);
     const section = document.createElement("section");
     const h2 = document.createElement("h2");
@@ -165,7 +166,8 @@ async function toggle(item, btn) {
 async function load() {
   try {
     allItems = await api("/items?active=true");
-    allItems.sort((a, b) => a.id - b.id);
+    // Checklist order: by sequence (items without one last), then by id.
+    allItems.sort((a, b) => (a.sequence ?? Infinity) - (b.sequence ?? Infinity) || a.id - b.id);
     setStatus("");
     renderTypeOptions();
     applyFilter();

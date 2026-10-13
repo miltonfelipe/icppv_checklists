@@ -44,7 +44,9 @@ def list_items(
         q = q.filter(ChecklistItem.active == active)
     if activated is not None:
         q = q.filter(ChecklistItem.activated == activated)
-    return q.all()
+    return q.order_by(
+        ChecklistItem.sequence.is_(None), ChecklistItem.sequence, ChecklistItem.id
+    ).all()
 
 
 @app.get("/items/{item_id}", response_model=ItemResponse)

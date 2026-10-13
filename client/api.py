@@ -50,6 +50,7 @@ class ChecklistClient:
         active: bool = True,
         activated: bool = False,
         time: Optional[str] = None,
+        sequence: Optional[int] = None,
     ) -> dict:
         payload: dict[str, Any] = {
             "type": type,
@@ -60,6 +61,8 @@ class ChecklistClient:
         }
         if time is not None:
             payload["time"] = time
+        if sequence is not None:
+            payload["sequence"] = sequence
         r = self.session.post(self._url("/items"), json=payload)
         r.raise_for_status()
         return r.json()

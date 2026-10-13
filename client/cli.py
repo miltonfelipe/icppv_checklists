@@ -18,11 +18,12 @@ def _client(url: Optional[str]) -> ChecklistClient:
 
 def _item_table(items: list[dict]) -> Table:
     table = Table(box=box.SIMPLE_HEAD, show_lines=False)
-    for col in ("id", "type", "group", "description", "active", "activated", "time"):
+    for col in ("id", "seq", "type", "group", "description", "active", "activated", "time"):
         table.add_column(col, overflow="fold")
     for item in items:
         table.add_row(
             str(item.get("id", "")),
+            str(item.get("sequence") if item.get("sequence") is not None else ""),
             item.get("type", ""),
             item.get("group", ""),
             item.get("description", ""),
@@ -95,6 +96,7 @@ def create_item(
     active: bool = typer.Option(True, help="Active flag"),
     activated: bool = typer.Option(False, help="Activated flag"),
     time: Optional[str] = typer.Option(None, help="Time of day the task must be performed (HH:MM)"),
+    sequence: Optional[int] = typer.Option(None, help="Position of the item in its checklist"),
     url: Optional[str] = typer.Option(None, "--url", "-u", envvar="ICPPV_SERVER_URL"),
 ):
     """Create a new checklist item."""
@@ -106,6 +108,7 @@ def create_item(
             active=active,
             activated=activated,
             time=time,
+            sequence=sequence,
         )
     except requests.HTTPError as e:
         _abort(e)
@@ -126,6 +129,7 @@ def update_item(
     active: Optional[bool] = typer.Option(None, help="New active flag"),
     activated: Optional[bool] = typer.Option(None, help="New activated flag"),
     time: Optional[str] = typer.Option(None, help="New time of day (HH:MM)"),
+    sequence: Optional[int] = typer.Option(None, help="New position in the checklist"),
     url: Optional[str] = typer.Option(None, "--url", "-u", envvar="ICPPV_SERVER_URL"),
 ):
     """Update fields of an existing item (only supplied fields are changed)."""
@@ -142,6 +146,8 @@ def update_item(
         fields["activated"] = activated
     if time is not None:
         fields["time"] = time
+    if sequence is not None:
+        fields["sequence"] = sequence
 
     if not fields:
         console.print("[yellow]No fields to update — pass at least one option.[/yellow]")
