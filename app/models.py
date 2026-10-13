@@ -1,7 +1,8 @@
+import re
 from datetime import time as TimeOfDay
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator, PlainSerializer
 from sqlalchemy import Boolean, Column, Integer, String, Time, text
 
 from app.database import Base
@@ -22,13 +23,33 @@ class ChecklistItem(Base):
     sequence = Column(Integer, nullable=True)
 
 
+_HHMM = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
+
+
+def _parse_hhmm(value):
+    if isinstance(value, TimeOfDay):
+        return value
+    match = _HHMM.fullmatch(str(value).strip())
+    if match is None:
+        raise ValueError("time must be HH:MM in 24-hour format (00:00 to 23:59)")
+    return TimeOfDay(int(match[1]), int(match[2]))
+
+
+# Time of day in 24-hour "HH:MM", both in requests and responses.
+Clock = Annotated[
+    TimeOfDay,
+    BeforeValidator(_parse_hhmm),
+    PlainSerializer(lambda t: t.strftime("%H:%M"), return_type=str, when_used="json"),
+]
+
+
 class ItemCreate(BaseModel):
     type: str
     group: str
     description: str
     active: bool = True
     activated: bool = False
-    time: Optional[TimeOfDay] = None
+    time: Optional[Clock] = None
     sequence: Optional[int] = None
 
 
@@ -38,7 +59,7 @@ class ItemUpdate(BaseModel):
     description: Optional[str] = None
     active: Optional[bool] = None
     activated: Optional[bool] = None
-    time: Optional[TimeOfDay] = None
+    time: Optional[Clock] = None
     sequence: Optional[int] = None
 
 
@@ -49,7 +70,7 @@ class ItemResponse(BaseModel):
     description: str
     active: bool
     activated: bool
-    time: Optional[TimeOfDay]
+    time: Optional[Clock]
     sequence: Optional[int]
 
     model_config = {"from_attributes": True}

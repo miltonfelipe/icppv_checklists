@@ -44,7 +44,7 @@ client/
 checklists.db   SQLite file created at runtime in the repo root
 ```
 
-The database has a single table `items` with columns: `id, type, group, description, active, activated, time, sequence`. `active` and `activated` are booleans; `time` is an optional time of day (`HH:MM`, no date) at which the task must be performed; `sequence` is an optional integer giving the item's position in its checklist (items without one sort last). `GET /items` returns items ordered by `sequence`, then `id`.
+The database has a single table `items` with columns: `id, type, group, description, active, activated, time, sequence`. `active` and `activated` are booleans; `time` is an optional time of day at which the task must be performed, always 24-hour `HH:MM` text in the API, web UI and CLI (validated and serialized by the `Clock` type in `models.py`; stored as SQLite TIME); `sequence` is an optional integer giving the item's position in its checklist (items without one sort last). `GET /items` returns items ordered by `sequence`, then `id`.
 
 `group` is a SQL reserved word — the ORM column is declared with an explicit name `Column("group", String)` so SQLAlchemy quotes it correctly.
 
