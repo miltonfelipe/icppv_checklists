@@ -68,6 +68,16 @@
   </section>
 
   <section>
+    <h2>Reset checklist</h2>
+    <form id="reset" class="row">
+      <label>Checklist
+        <select name="type"><option value="">All</option></select>
+      </label>
+      <button class="danger" type="submit">Mark all as not done</button>
+    </form>
+  </section>
+
+  <section>
     <h2>Items</h2>
     <form id="filters" class="row" style="margin-bottom:10px">
       <label>Type <input name="type" list="types"></label>
@@ -217,6 +227,7 @@ async function load() {
     $("#rows").replaceChildren(...items.map(renderRow));
     $("#count").textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
     if (!params.size) fillSuggestions(items);
+    await fillResetOptions();
   } catch (e) { status(e.message, "err"); }
 }
 
@@ -226,6 +237,32 @@ function fillSuggestions(items) {
     $(id).replaceChildren(...values.map((v) => Object.assign(document.createElement("option"), { value: v })));
   }
 }
+
+// Uses the full item list (not the filtered table) so the "done" counts are always right.
+async function fillResetOptions() {
+  const items = await api("GET", "/items");
+  const select = $("#reset").elements.type;
+  const current = select.value;
+  const done = (list) => list.filter((i) => i.activated).length;
+  const types = [...new Set(items.map((i) => i.type))].sort();
+  select.replaceChildren(
+    new Option(`All (${done(items)} done)`, ""),
+    ...types.map((t) => new Option(`${t} (${done(items.filter((i) => i.type === t))} done)`, t)),
+  );
+  select.value = types.includes(current) ? current : "";
+}
+
+$("#reset").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const type = e.target.elements.type.value;
+  const label = type ? `the "${type}" checklist` : "ALL checklists";
+  if (!confirm(`Mark every item in ${label} as not done?`)) return;
+  try {
+    const { reset } = await api("POST", "/items/reset" + (type ? "?" + new URLSearchParams({ type }) : ""));
+    status(`Reset ${reset} item${reset === 1 ? "" : "s"} in ${label}`, "ok");
+    load();
+  } catch (e) { status(e.message, "err"); }
+});
 
 $("#filters").addEventListener("submit", (e) => { e.preventDefault(); load(); });
 $("#clear").onclick = () => { $("#filters").reset(); load(); };

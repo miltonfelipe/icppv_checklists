@@ -101,6 +101,17 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
     return item
 
 
+@app.post("/items/reset", dependencies=[Depends(require_admin)])
+def reset_items(type: Optional[str] = None, db: Session = Depends(get_db)):
+    """Mark every item as not done (activated = false), optionally only for one type."""
+    q = db.query(ChecklistItem).filter(ChecklistItem.activated.is_(True))
+    if type is not None:
+        q = q.filter(ChecklistItem.type == type)
+    reset = q.update({ChecklistItem.activated: False}, synchronize_session=False)
+    db.commit()
+    return {"reset": reset}
+
+
 @app.put("/items/{item_id}", response_model=ItemResponse, dependencies=[Depends(require_admin)])
 def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)):
     item = db.get(ChecklistItem, item_id)
@@ -117,7 +128,8 @@ def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
 def set_activated(item_id: int, payload: ActivatedUpdate, db: Session = Depends(get_db)):
     """Mark an item done / not done. Open (no login) so the checklist can be used by anyone."""
     item = db.get(ChecklistItem, item_id)
-    if item is None:
+    # Inactive items are not part of the checklist, so they can't be ticked either.
+    if item is None or not item.active:
         raise HTTPException(status_code=404, detail="Item not found")
     item.activated = payload.activated
     db.commit()

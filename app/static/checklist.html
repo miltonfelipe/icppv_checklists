@@ -69,6 +69,7 @@ const progressEl = document.getElementById("progress");
 const typeEl = document.getElementById("type");
 let allItems = [];
 let items = [];
+let pendingToggles = 0;
 
 // The selected checklist is kept in the URL (?type=...) so it survives reloads and can be bookmarked.
 function selectedType() { return new URLSearchParams(location.search).get("type") || ""; }
@@ -149,6 +150,7 @@ function render() {
 
 async function toggle(item, btn) {
   btn.disabled = true;
+  pendingToggles++;
   try {
     const updated = await api(`/items/${item.id}/activated`, {
       method: "PUT",
@@ -158,8 +160,16 @@ async function toggle(item, btn) {
     setStatus("");
     render();
   } catch (e) {
+    if (e.message.startsWith("404")) {
+      // Item was deleted or set inactive meanwhile: drop it from the list.
+      setStatus("");
+      load();
+      return;
+    }
     setStatus(`Could not update "${item.description}": ${e.message}`);
     btn.disabled = false;
+  } finally {
+    pendingToggles--;
   }
 }
 
@@ -175,6 +185,15 @@ async function load() {
     setStatus(`Could not load items: ${e.message}`);
   }
 }
+
+// Keep the list current with edits made elsewhere (e.g. an item set inactive in /admin):
+// refresh every 30 s and whenever the page becomes visible again.
+const REFRESH_MS = 30000;
+function refresh() {
+  if (document.visibilityState === "visible" && pendingToggles === 0) load();
+}
+setInterval(refresh, REFRESH_MS);
+document.addEventListener("visibilitychange", refresh);
 
 load();
 </script>

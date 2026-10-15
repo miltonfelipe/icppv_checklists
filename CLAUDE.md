@@ -37,7 +37,7 @@ app/
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
   main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin)
   static/admin.html  Editor UI at /admin (plain HTML/JS, no build step) that calls the /items API
-  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group, in `sequence` order; clicking toggles `activated` via the open PUT /items/{id}/activated
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group, in `sequence` order; clicking toggles `activated` via the open PUT /items/{id}/activated; re-fetches every 30 s and when the tab becomes visible
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
@@ -92,8 +92,9 @@ python3 -m client delete 3
 | GET | `/items` | List all items; filter via `?type=`, `?group=`, `?active=`, `?activated=` query params |
 | GET | `/items/{id}` | Fetch a single item |
 | POST | `/items` | Create an item (201) (admin) |
+| POST | `/items/reset` | Set `activated = false` on all items, or only `?type=`; returns `{"reset": n}` (admin) |
 | PUT | `/items/{id}` | Partial update (admin) |
-| PUT | `/items/{id}/activated` | Set only `activated`, body `{"activated": true}` (open) |
+| PUT | `/items/{id}/activated` | Set only `activated`, body `{"activated": true}` (open; 404 for inactive items) |
 | DELETE | `/items/{id}` | Delete (204) (admin) |
 
 "(admin)" routes require HTTP Basic auth matching `ICPPV_ADMIN_USER` (default `admin`) / `ICPPV_ADMIN_PASSWORD`; with no password set they return 503.
