@@ -47,8 +47,9 @@
   li button.done { background: var(--done-bg); color: var(--done-text); border-color: var(--ok); }
   li button.done::before { content: "✓"; border-color: var(--ok); background: var(--ok);
                            color: var(--panel); font-size: 12px; line-height: 12px; text-align: center; }
-  li button.done span { text-decoration: line-through; }
-  /* Not done yet and due within a minute / past its time. */
+  li button.done .desc { text-decoration: line-through; }
+  li button .due { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; opacity: .75; }
+  /* Not done yet and due within 5 minutes / past its time. */
   li button.due-soon { background: var(--soon-bg); color: var(--soon-text); border-color: var(--soon-border); }
   li button.overdue { background: var(--late-bg); color: var(--late-text); border-color: var(--late-border); }
   li button.due-soon::before { border-color: var(--soon-border); }
@@ -150,8 +151,15 @@ function render() {
         btn.title = `Due at ${item.time}`;
       }
       const text = document.createElement("span");
+      text.className = "desc";
       text.textContent = item.description;
       btn.append(text);
+      if (item.time) {
+        const due = document.createElement("span");
+        due.className = "due";
+        due.textContent = item.time;
+        btn.append(due);
+      }
       btn.addEventListener("click", () => toggle(item, btn));
       li.append(btn);
       ul.append(li);
@@ -163,8 +171,8 @@ function render() {
 }
 
 // Colors pending items by their "HH:MM" time against this device's clock:
-// yellow from 1 minute before the time, red once the time is reached.
-const DUE_SOON_SECONDS = 60;
+// yellow from 5 minutes before the time, red once the time is reached.
+const DUE_SOON_SECONDS = 5 * 60;
 function updateDueColors() {
   const now = new Date();
   const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();

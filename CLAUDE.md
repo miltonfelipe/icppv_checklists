@@ -37,7 +37,7 @@ app/
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
   main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin)
   static/admin.html  Editor UI at /admin (plain HTML/JS, no build step) that calls the /items API
-  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions grouped by group, in `sequence` order; clicking toggles `activated` via the open PUT /items/{id}/activated; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 1 min before their `time` and red once it's reached (device clock)
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions (with their `time`, if any, on the right) grouped by group, in `sequence` order; clicking toggles `activated` via the open PUT /items/{id}/activated; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 5 min before their `time` and red once it's reached (device clock)
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
