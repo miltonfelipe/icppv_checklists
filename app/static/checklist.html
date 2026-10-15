@@ -9,12 +9,16 @@
     --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7280;
     --border: #d9dde3; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a;
     --done-bg: #dcfce7; --done-text: #166534;
+    --soon-bg: #fef9c3; --soon-text: #854d0e; --soon-border: #eab308;
+    --late-bg: #fee2e2; --late-text: #991b1b; --late-border: #dc2626;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #14171c; --panel: #1d2128; --text: #e6e8eb; --muted: #9aa1ab;
       --border: #333a44; --accent: #60a5fa; --danger: #f87171; --ok: #4ade80;
       --done-bg: #14532d; --done-text: #bbf7d0;
+      --soon-bg: #422006; --soon-text: #fde68a; --soon-border: #ca8a04;
+      --late-bg: #450a0a; --late-text: #fecaca; --late-border: #ef4444;
     }
   }
   * { box-sizing: border-box; }
@@ -44,6 +48,11 @@
   li button.done::before { content: "✓"; border-color: var(--ok); background: var(--ok);
                            color: var(--panel); font-size: 12px; line-height: 12px; text-align: center; }
   li button.done span { text-decoration: line-through; }
+  /* Not done yet and due within a minute / past its time. */
+  li button.due-soon { background: var(--soon-bg); color: var(--soon-text); border-color: var(--soon-border); }
+  li button.overdue { background: var(--late-bg); color: var(--late-text); border-color: var(--late-border); }
+  li button.due-soon::before { border-color: var(--soon-border); }
+  li button.overdue::before { border-color: var(--late-border); }
   li button:disabled { opacity: .6; cursor: progress; }
   .muted { color: var(--muted); }
 </style>
@@ -136,6 +145,10 @@ function render() {
       btn.type = "button";
       btn.className = item.activated ? "done" : "";
       btn.setAttribute("aria-pressed", item.activated);
+      if (item.time) {
+        btn.dataset.time = item.time;
+        btn.title = `Due at ${item.time}`;
+      }
       const text = document.createElement("span");
       text.textContent = item.description;
       btn.append(text);
@@ -146,7 +159,24 @@ function render() {
     section.append(h2, ul);
     groupsEl.append(section);
   }
+  updateDueColors();
 }
+
+// Colors pending items by their "HH:MM" time against this device's clock:
+// yellow from 1 minute before the time, red once the time is reached.
+const DUE_SOON_SECONDS = 60;
+function updateDueColors() {
+  const now = new Date();
+  const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  for (const btn of groupsEl.querySelectorAll("button[data-time]")) {
+    const [h, m] = btn.dataset.time.split(":").map(Number);
+    const dueSec = h * 3600 + m * 60;
+    const pending = !btn.classList.contains("done");
+    btn.classList.toggle("overdue", pending && nowSec >= dueSec);
+    btn.classList.toggle("due-soon", pending && nowSec >= dueSec - DUE_SOON_SECONDS && nowSec < dueSec);
+  }
+}
+setInterval(updateDueColors, 5000);
 
 async function toggle(item, btn) {
   btn.disabled = true;
