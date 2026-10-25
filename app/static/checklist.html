@@ -126,6 +126,7 @@ function render() {
     return;
   }
 
+  const shifts = snoozeShifts();
   const byGroup = new Map();
   for (const item of items) {
     if (!byGroup.has(item.group)) byGroup.set(item.group, []);
@@ -151,10 +152,11 @@ function render() {
       btn.type = "button";
       btn.className = item.activated ? "item done" : "item";
       btn.setAttribute("aria-pressed", item.activated);
-      const dueAt = item.time && snoozedTime(item);
+      const shift = shifts.get(item.id);
+      const dueAt = item.time && shiftedTime(item.time, shift);
       if (item.time) {
         btn.dataset.time = dueAt;
-        btn.title = item.snooze ? `Due at ${item.time}, snoozed to ${dueAt}` : `Due at ${item.time}`;
+        btn.title = shift ? `Due at ${item.time}, snoozed to ${dueAt}` : `Due at ${item.time}`;
       }
       const text = document.createElement("span");
       text.className = "desc";
@@ -163,7 +165,7 @@ function render() {
       if (item.time) {
         const due = document.createElement("span");
         due.className = "due";
-        if (item.snooze) {
+        if (shift) {
           const original = document.createElement("s");
           original.textContent = item.time;
           due.append(original, dueAt);
@@ -177,7 +179,7 @@ function render() {
       if (item.time && !item.activated) {
         li.append(snoozeButton(item, `+${SNOOZE_STEP_MIN}`, `Snooze ${SNOOZE_STEP_MIN} more minutes`,
                                item.snooze + SNOOZE_STEP_MIN));
-        if (item.snooze) li.append(snoozeButton(item, "↺", `Back to ${item.time}`, 0));
+        if (item.snooze) li.append(snoozeButton(item, "↺", "Undo this item's snooze", 0));
       }
       ul.append(li);
     }
@@ -228,14 +230,30 @@ async function toggle(item, btn) {
   }
 }
 
-// Snoozing postpones an item past its stored time (the stored time itself doesn't change);
-// each tap adds SNOOZE_STEP_MIN minutes, and "↺" drops the snooze.
+// Snoozing postpones an item and every item of its checklist with a later time (the stored
+// times don't change): each tap adds SNOOZE_STEP_MIN minutes to the item's own snooze, and
+// "↺" drops it. An item is pushed back by its own snooze plus those of every item of the
+// same type whose stored time is earlier; items at the same time don't shift each other.
 const SNOOZE_STEP_MIN = 5;
 
-// The item's "HH:MM" time pushed back by its snooze minutes.
-function snoozedTime(item) {
-  const [h, m] = item.time.split(":").map(Number);
-  const total = (h * 60 + m + (item.snooze ?? 0)) % (24 * 60);
+// Minutes each item with a time is pushed back, by id.
+function snoozeShifts() {
+  const shifts = new Map();
+  for (const item of allItems) {
+    if (!item.time) continue;
+    let total = item.snooze ?? 0;
+    for (const other of allItems) {
+      if (other.type === item.type && other.time && other.time < item.time) total += other.snooze ?? 0;
+    }
+    shifts.set(item.id, total);
+  }
+  return shifts;
+}
+
+// "HH:MM" pushed back by some minutes.
+function shiftedTime(time, minutes) {
+  const [h, m] = time.split(":").map(Number);
+  const total = (h * 60 + m + minutes) % (24 * 60);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
