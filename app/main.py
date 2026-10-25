@@ -78,7 +78,11 @@ def list_items(
     if activated is not None:
         q = q.filter(ChecklistItem.activated == activated)
     return q.order_by(
-        ChecklistItem.sequence.is_(None), ChecklistItem.sequence, ChecklistItem.id
+        ChecklistItem.time.is_(None),
+        ChecklistItem.time,
+        ChecklistItem.sequence.is_(None),
+        ChecklistItem.sequence,
+        ChecklistItem.id,
     ).all()
 
 
