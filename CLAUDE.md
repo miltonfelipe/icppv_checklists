@@ -37,7 +37,7 @@ app/
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
   main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin)
   static/admin.html  Editor UI at /admin (plain HTML/JS, no build step) that calls the /items API
-  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions (with their `time`, if any, on the right) grouped by group, ordered by `time`, then `sequence`; clicking toggles `activated` via the open PUT /items/{id}/activated; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 5 min before their `time` and red once it's reached (device clock)
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions (with their `time`, if any, on the right) grouped by group, ordered by `time`, then `sequence`; clicking toggles `activated` via the open PUT /items/{id}/activated; pending items with a time get a `+5` snooze button (and `↺` to undo) that pushes their due time back via the open PUT /items/{id}/snooze, showing the stored time struck through next to the snoozed one; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 5 min before their `time` and red once it's reached (device clock)
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
@@ -45,7 +45,7 @@ client/
 checklists.db   SQLite file created at runtime in the repo root
 ```
 
-The database has a single table `items` with columns: `id, type, group, description, active, activated, time, sequence`. `active` and `activated` are booleans; `time` is an optional time of day at which the task must be performed, always 24-hour `HH:MM` text in the API, web UI and CLI (validated and serialized by the `Clock` type in `models.py`; stored as SQLite TIME); `sequence` is an optional integer giving the item's position in its checklist (items without one sort last). `GET /items` returns items ordered by `time` (items without one last), then `sequence`, then `id`.
+The database has a single table `items` with columns: `id, type, group, description, active, activated, time, sequence`. `active` and `activated` are booleans; `time` is an optional time of day at which the task must be performed, always 24-hour `HH:MM` text in the API, web UI and CLI (validated and serialized by the `Clock` type in `models.py`; stored as SQLite TIME); `sequence` is an optional integer giving the item's position in its checklist (items without one sort last); `snooze` is the number of minutes checklist users have postponed the item past its `time` (default 0; the stored `time` never changes, and ordering ignores the snooze). `GET /items` returns items ordered by `time` (items without one last), then `sequence`, then `id`.
 
 `group` is a SQL reserved word — the ORM column is declared with an explicit name `Column("group", String)` so SQLAlchemy quotes it correctly.
 
@@ -59,7 +59,7 @@ pip install -r client/requirements.txt
 
 # Point at the server (set once, or pass --url on every command)
 export ICPPV_SERVER_URL=http://<server-ip>:8000
-# Needed for create/update/delete (update with only --activated/--no-activated works without it)
+# Needed for create/update/delete (update with only --activated/--no-activated and/or --snooze works without it)
 export ICPPV_ADMIN_USER=admin ICPPV_ADMIN_PASSWORD='the-server-password'
 
 # Run
@@ -79,6 +79,7 @@ python3 -m client update 3 --no-active
 python3 -m client update 3 --activated
 python3 -m client update 3 --time 08:30           # time of day the task must be performed
 python3 -m client update 3 --sequence 2           # position in the checklist
+python3 -m client update 3 --snooze 10            # postpone 10 min past its time (0 undoes)
 python3 -m client delete 3
 ```
 
@@ -92,9 +93,10 @@ python3 -m client delete 3
 | GET | `/items` | List all items; filter via `?type=`, `?group=`, `?active=`, `?activated=` query params |
 | GET | `/items/{id}` | Fetch a single item |
 | POST | `/items` | Create an item (201) (admin) |
-| POST | `/items/reset` | Set `activated = false` on all items, or only `?type=`; returns `{"reset": n}` (admin) |
+| POST | `/items/reset` | Set `activated = false` and `snooze = 0` on all items, or only `?type=`; returns `{"reset": n}` (admin) |
 | PUT | `/items/{id}` | Partial update (admin) |
 | PUT | `/items/{id}/activated` | Set only `activated`, body `{"activated": true}` (open; 404 for inactive items) |
+| PUT | `/items/{id}/snooze` | Set only `snooze` (minutes past `time`, 0–1440), body `{"snooze": 10}` (open; 404 for inactive items, 422 if the item has no time) |
 | DELETE | `/items/{id}` | Delete (204) (admin) |
 
 "(admin)" routes require HTTP Basic auth matching `ICPPV_ADMIN_USER` (default `admin`) / `ICPPV_ADMIN_PASSWORD`; with no password set they return 503.

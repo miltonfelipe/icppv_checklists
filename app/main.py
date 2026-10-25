@@ -6,10 +6,18 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
-from app.models import ActivatedUpdate, ChecklistItem, ItemCreate, ItemResponse, ItemUpdate
+from app.models import (
+    ActivatedUpdate,
+    ChecklistItem,
+    ItemCreate,
+    ItemResponse,
+    ItemUpdate,
+    SnoozeUpdate,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -107,11 +115,15 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
 
 @app.post("/items/reset", dependencies=[Depends(require_admin)])
 def reset_items(type: Optional[str] = None, db: Session = Depends(get_db)):
-    """Mark every item as not done (activated = false), optionally only for one type."""
-    q = db.query(ChecklistItem).filter(ChecklistItem.activated.is_(True))
+    """Mark every item as not done (activated = false) and drop snoozes, optionally only for one type."""
+    q = db.query(ChecklistItem).filter(
+        or_(ChecklistItem.activated.is_(True), ChecklistItem.snooze != 0)
+    )
     if type is not None:
         q = q.filter(ChecklistItem.type == type)
-    reset = q.update({ChecklistItem.activated: False}, synchronize_session=False)
+    reset = q.update(
+        {ChecklistItem.activated: False, ChecklistItem.snooze: 0}, synchronize_session=False
+    )
     db.commit()
     return {"reset": reset}
 
@@ -136,6 +148,20 @@ def set_activated(item_id: int, payload: ActivatedUpdate, db: Session = Depends(
     if item is None or not item.active:
         raise HTTPException(status_code=404, detail="Item not found")
     item.activated = payload.activated
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@app.put("/items/{item_id}/snooze", response_model=ItemResponse)
+def set_snooze(item_id: int, payload: SnoozeUpdate, db: Session = Depends(get_db)):
+    """Postpone an item by some minutes past its stored time. Open, like set_activated."""
+    item = db.get(ChecklistItem, item_id)
+    if item is None or not item.active:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if item.time is None and payload.snooze:
+        raise HTTPException(status_code=422, detail="Item has no time to snooze")
+    item.snooze = payload.snooze
     db.commit()
     db.refresh(item)
     return item

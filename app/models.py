@@ -2,7 +2,7 @@ import re
 from datetime import time as TimeOfDay
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, BeforeValidator, PlainSerializer
+from pydantic import BaseModel, BeforeValidator, Field, PlainSerializer
 from sqlalchemy import Boolean, Column, Integer, String, Time, text
 
 from app.database import Base
@@ -21,6 +21,8 @@ class ChecklistItem(Base):
     time = Column(Time, nullable=True)
     # Position of the item in its checklist; items without one come last.
     sequence = Column(Integer, nullable=True)
+    # Minutes the item is postponed past its time by users of the checklist; cleared by reset.
+    snooze = Column(Integer, default=0, server_default=text("0"), nullable=False)
 
 
 _HHMM = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
@@ -67,6 +69,11 @@ class ActivatedUpdate(BaseModel):
     activated: bool
 
 
+class SnoozeUpdate(BaseModel):
+    # Minutes after the stored time; 0 removes the snooze.
+    snooze: int = Field(ge=0, le=24 * 60)
+
+
 class ItemResponse(BaseModel):
     id: int
     type: str
@@ -76,5 +83,6 @@ class ItemResponse(BaseModel):
     activated: bool
     time: Optional[Clock]
     sequence: Optional[int]
+    snooze: int
 
     model_config = {"from_attributes": True}

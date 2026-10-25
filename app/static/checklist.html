@@ -38,22 +38,27 @@
   h2 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; }
   h2 .count { color: var(--muted); font-weight: normal; font-size: 13px; }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  li button { width: 100%; text-align: left; font: inherit; color: var(--text);
+  li { display: flex; gap: 6px; align-items: stretch; }
+  li button.item { flex: 1; min-width: 0; text-align: left; font: inherit; color: var(--text);
               background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
               padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: center; }
   li button:hover { border-color: var(--accent); }
-  li button::before { content: ""; flex: none; width: 16px; height: 16px;
+  li button.item::before { content: ""; flex: none; width: 16px; height: 16px;
                       border: 2px solid var(--border); border-radius: 4px; }
   li button.done { background: var(--done-bg); color: var(--done-text); border-color: var(--ok); }
-  li button.done::before { content: "✓"; border-color: var(--ok); background: var(--ok);
+  li button.item.done::before { content: "✓"; border-color: var(--ok); background: var(--ok);
                            color: var(--panel); font-size: 12px; line-height: 12px; text-align: center; }
   li button.done .desc { text-decoration: line-through; }
   li button .due { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; opacity: .75; }
+  li button .due s { opacity: .7; margin-right: 4px; }
+  /* Snooze buttons beside a pending item with a time. */
+  li button.snooze { flex: none; font: inherit; font-size: 13px; color: var(--text); background: var(--panel);
+                     border: 1px solid var(--border); border-radius: 6px; padding: 0 10px; cursor: pointer; }
   /* Not done yet and due within 5 minutes / past its time. */
   li button.due-soon { background: var(--soon-bg); color: var(--soon-text); border-color: var(--soon-border); }
   li button.overdue { background: var(--late-bg); color: var(--late-text); border-color: var(--late-border); }
-  li button.due-soon::before { border-color: var(--soon-border); }
-  li button.overdue::before { border-color: var(--late-border); }
+  li button.item.due-soon::before { border-color: var(--soon-border); }
+  li button.item.overdue::before { border-color: var(--late-border); }
   li button:disabled { opacity: .6; cursor: progress; }
   .muted { color: var(--muted); }
 </style>
@@ -144,11 +149,12 @@ function render() {
       const li = document.createElement("li");
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = item.activated ? "done" : "";
+      btn.className = item.activated ? "item done" : "item";
       btn.setAttribute("aria-pressed", item.activated);
+      const dueAt = item.time && snoozedTime(item);
       if (item.time) {
-        btn.dataset.time = item.time;
-        btn.title = `Due at ${item.time}`;
+        btn.dataset.time = dueAt;
+        btn.title = item.snooze ? `Due at ${item.time}, snoozed to ${dueAt}` : `Due at ${item.time}`;
       }
       const text = document.createElement("span");
       text.className = "desc";
@@ -157,11 +163,22 @@ function render() {
       if (item.time) {
         const due = document.createElement("span");
         due.className = "due";
-        due.textContent = item.time;
+        if (item.snooze) {
+          const original = document.createElement("s");
+          original.textContent = item.time;
+          due.append(original, dueAt);
+        } else {
+          due.textContent = item.time;
+        }
         btn.append(due);
       }
       btn.addEventListener("click", () => toggle(item, btn));
       li.append(btn);
+      if (item.time && !item.activated) {
+        li.append(snoozeButton(item, `+${SNOOZE_STEP_MIN}`, `Snooze ${SNOOZE_STEP_MIN} more minutes`,
+                               item.snooze + SNOOZE_STEP_MIN));
+        if (item.snooze) li.append(snoozeButton(item, "↺", `Back to ${item.time}`, 0));
+      }
       ul.append(li);
     }
     section.append(h2, ul);
@@ -176,7 +193,7 @@ const DUE_SOON_SECONDS = 5 * 60;
 function updateDueColors() {
   const now = new Date();
   const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  for (const btn of groupsEl.querySelectorAll("button[data-time]")) {
+  for (const btn of groupsEl.querySelectorAll("button.item[data-time]")) {
     const [h, m] = btn.dataset.time.split(":").map(Number);
     const dueSec = h * 3600 + m * 60;
     const pending = !btn.classList.contains("done");
@@ -205,6 +222,52 @@ async function toggle(item, btn) {
       return;
     }
     setStatus(`Could not update "${item.description}": ${e.message}`);
+    btn.disabled = false;
+  } finally {
+    pendingToggles--;
+  }
+}
+
+// Snoozing postpones an item past its stored time (the stored time itself doesn't change);
+// each tap adds SNOOZE_STEP_MIN minutes, and "↺" drops the snooze.
+const SNOOZE_STEP_MIN = 5;
+
+// The item's "HH:MM" time pushed back by its snooze minutes.
+function snoozedTime(item) {
+  const [h, m] = item.time.split(":").map(Number);
+  const total = (h * 60 + m + (item.snooze ?? 0)) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function snoozeButton(item, label, title, snooze) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "snooze";
+  btn.textContent = label;
+  btn.title = title;
+  btn.setAttribute("aria-label", `${title}: ${item.description}`);
+  btn.addEventListener("click", () => setSnooze(item, btn, snooze));
+  return btn;
+}
+
+async function setSnooze(item, btn, snooze) {
+  btn.disabled = true;
+  pendingToggles++;
+  try {
+    const updated = await api(`/items/${item.id}/snooze`, {
+      method: "PUT",
+      body: JSON.stringify({ snooze }),
+    });
+    Object.assign(item, updated);
+    setStatus("");
+    render();
+  } catch (e) {
+    if (e.message.startsWith("404")) {
+      setStatus("");
+      load();
+      return;
+    }
+    setStatus(`Could not snooze "${item.description}": ${e.message}`);
     btn.disabled = false;
   } finally {
     pendingToggles--;

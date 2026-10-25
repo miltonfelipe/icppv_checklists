@@ -82,6 +82,12 @@ class ChecklistClient:
         r.raise_for_status()
         return r.json()
 
+    def set_snooze(self, item_id: int, minutes: int) -> dict:
+        """Postpone an item this many minutes past its time, 0 to undo (no admin login needed)."""
+        r = self.session.put(self._url(f"/items/{item_id}/snooze"), json={"snooze": minutes})
+        r.raise_for_status()
+        return r.json()
+
     def delete_item(self, item_id: int) -> None:
         r = self.session.delete(self._url(f"/items/{item_id}"))
         r.raise_for_status()

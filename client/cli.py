@@ -18,7 +18,7 @@ def _client(url: Optional[str]) -> ChecklistClient:
 
 def _item_table(items: list[dict]) -> Table:
     table = Table(box=box.SIMPLE_HEAD, show_lines=False)
-    for col in ("id", "seq", "type", "group", "description", "active", "activated", "time"):
+    for col in ("id", "seq", "type", "group", "description", "active", "activated", "time", "snooze"):
         table.add_column(col, overflow="fold")
     for item in items:
         table.add_row(
@@ -30,6 +30,7 @@ def _item_table(items: list[dict]) -> Table:
             str(item.get("active", "")),
             str(item.get("activated", "")),
             str(item.get("time") or ""),
+            f"+{item['snooze']} min" if item.get("snooze") else "",
         )
     return table
 
@@ -132,6 +133,9 @@ def update_item(
     activated: Optional[bool] = typer.Option(None, help="New activated flag"),
     time: Optional[str] = typer.Option(None, help="New time of day (HH:MM, 24-hour)"),
     sequence: Optional[int] = typer.Option(None, help="New position in the checklist"),
+    snooze: Optional[int] = typer.Option(
+        None, help="Minutes to postpone the item past its time (0 undoes it)"
+    ),
     url: Optional[str] = typer.Option(None, "--url", "-u", envvar="ICPPV_SERVER_URL"),
 ):
     """Update fields of an existing item (only supplied fields are changed)."""
@@ -151,16 +155,18 @@ def update_item(
     if sequence is not None:
         fields["sequence"] = sequence
 
-    if not fields:
+    if not fields and snooze is None:
         console.print("[yellow]No fields to update — pass at least one option.[/yellow]")
         raise typer.Exit(1)
 
     try:
         client = _client(url)
+        # Snoozing and ticking an item done / not done don't need the admin login.
+        if snooze is not None:
+            item = client.set_snooze(item_id, snooze)
         if fields.keys() == {"activated"}:
-            # Ticking an item done / not done doesn't need the admin login.
             item = client.set_activated(item_id, activated)
-        else:
+        elif fields:
             item = client.update_item(item_id, **fields)
     except requests.HTTPError as e:
         _abort(e)
