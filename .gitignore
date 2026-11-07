@@ -5,3 +5,6 @@ __pycache__/
 # SQLite database and backups (runtime data)
 #*.db
 #*.db.bak*
+
+# Local settings (contains the admin password)
+.env

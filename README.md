@@ -3,6 +3,20 @@ Checklists apps for ICPPV
 
 ## Running the server
 
+### Quick start
+
+```bash
+cp .env.example .env      # then edit .env and set ICPPV_ADMIN_PASSWORD
+./start.sh                # or ./start.sh --dev to auto-reload on code changes
+```
+
+`start.sh` creates `.venv` and installs dependencies on first run, loads `.env`, and starts the server on
+`ICPPV_HOST`/`ICPPV_PORT` (default `0.0.0.0:8000`, so other machines can reach it). Extra arguments are passed to uvicorn.
+
+`./client.sh <command>` runs the CLI client the same way (e.g. `./client.sh list --type safety`).
+
+### Manual setup
+
 From the repo root:
 
 ```bash

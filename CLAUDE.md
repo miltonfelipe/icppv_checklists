@@ -16,6 +16,10 @@ sudo apt install python3-pip python3-venv
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+# Start scripts: create .venv + install deps on first run, load .env (see .env.example)
+./start.sh             # server on ICPPV_HOST:ICPPV_PORT (default 0.0.0.0:8000); --dev adds --reload
+./client.sh list       # CLI client
+
 # Run the server (reloads on file change); editing needs an admin password
 export ICPPV_ADMIN_PASSWORD='choose-a-password'   # ICPPV_ADMIN_USER defaults to "admin"
 uvicorn app.main:app --reload
