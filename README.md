@@ -13,6 +13,18 @@ cp .env.example .env      # then edit .env and set ICPPV_ADMIN_PASSWORD
 `start.sh` creates `.venv` and installs dependencies on first run, loads `.env`, and starts the server on
 `ICPPV_HOST`/`ICPPV_PORT` (default `0.0.0.0:8000`, so other machines can reach it). Extra arguments are passed to uvicorn.
 
+### Run as a service (start at boot)
+
+```bash
+./install-service.sh                 # installs the systemd service icppv-checklists (asks for sudo)
+journalctl -u icppv-checklists -f    # logs
+sudo systemctl restart icppv-checklists   # after editing .env or updating the code
+./install-service.sh --uninstall     # remove it
+```
+
+The service runs `start.sh` from the repo directory as your user, so it uses the same `.env`. If there is no `.env` yet, the installer
+creates one with the default admin password `162543`; change it in `.env` and restart the service.
+
 `./client.sh <command>` runs the CLI client the same way (e.g. `./client.sh list --type safety`).
 
 ### Manual setup

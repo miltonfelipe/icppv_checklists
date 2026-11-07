@@ -19,6 +19,7 @@ pip install -r requirements.txt
 # Start scripts: create .venv + install deps on first run, load .env (see .env.example)
 ./start.sh             # server on ICPPV_HOST:ICPPV_PORT (default 0.0.0.0:8000); --dev adds --reload
 ./client.sh list       # CLI client
+./install-service.sh   # systemd service "icppv-checklists" running start.sh as the current user (--uninstall removes it)
 
 # Run the server (reloads on file change); editing needs an admin password
 export ICPPV_ADMIN_PASSWORD='choose-a-password'   # ICPPV_ADMIN_USER defaults to "admin"
