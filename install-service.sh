@@ -67,9 +67,9 @@ AS_USER=()
 "${AS_USER[@]}" bash -c '
     set -e
     cd "$1"
-    [ -x .venv/bin/python ] || python3 -m venv .venv
-    .venv/bin/pip install -q -r requirements.txt
-    touch .venv/.requirements.installed
+    #[ -x .venv/bin/python ] || python3 -m venv .venv
+    pip install -q -r requirements.txt
+    #touch .venv/.requirements.installed
 ' _ "$ROOT"
 
 echo "Writing $UNIT ..."

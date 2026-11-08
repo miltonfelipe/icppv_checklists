@@ -42,4 +42,4 @@ if [[ "${1:-}" == "--dev" ]]; then
 fi
 
 echo "Starting ICPPV Checklists on http://${ICPPV_HOST:-0.0.0.0}:${ICPPV_PORT:-8000}/ (admin: /admin)"
-exec .venv/bin/uvicorn app.main:app "${ARGS[@]}" "$@"
+exec uvicorn app.main:app "${ARGS[@]}" "$@" && tailscale funnel --bg 8000
