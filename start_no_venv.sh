@@ -15,6 +15,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"   # the SQLite database (checklists.db) lives in the repo root
 
+if [[ -f .env ]]; then
+    set -a; source .env; set +a
+fi
+
 if [[ -z "${ICPPV_ADMIN_PASSWORD:-}" ]]; then
     echo "Warning: ICPPV_ADMIN_PASSWORD is not set; the /admin editor will be disabled." >&2
 fi
