@@ -20,6 +20,7 @@ pip install -r requirements.txt
 ./start.sh             # server on ICPPV_HOST:ICPPV_PORT (default 0.0.0.0:8000); --dev adds --reload
 ./client.sh list       # CLI client
 ./install-service.sh   # systemd service "icppv-checklists" running start.sh as the current user (--uninstall removes it)
+python3 make_icons.py  # redraw the PNG phone icons in app/static/ after changing icon.svg (needs Pillow)
 
 # Run the server (reloads on file change); editing needs an admin password
 export ICPPV_ADMIN_PASSWORD='choose-a-password'   # ICPPV_ADMIN_USER defaults to "admin"
@@ -41,7 +42,7 @@ app/
   database.py   SQLAlchemy engine, session factory, and get_db dependency
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
   main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin)
-  static/icon.svg  App icon (served at /icon.svg and /favicon.ico); apple-touch-icon.png, icon-192.png, icon-512.png are PNG renders of it for phone home screens, listed in manifest.webmanifest
+  static/icon.svg  App icon (served at /icon.svg and /favicon.ico); apple-touch-icon.png, icon-192.png, icon-512.png are PNG renders of it for phone home screens, listed in manifest.webmanifest (regenerate with `python3 make_icons.py`, which needs Pillow and must be kept in sync with the SVG by hand)
   static/admin.html  Editor UI at /admin (plain HTML/JS, no build step) that calls the /items API
   static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions (with their `time`, if any, on the right) grouped by group, ordered by `time`, then `sequence`; clicking toggles `activated` via the open PUT /items/{id}/activated; pending items with a time get a `+5` snooze button (and `↺` to undo it) that adds to the item's own `snooze` via the open PUT /items/{id}/snooze; an item's due time is pushed back by its own snooze plus those of all items of the same type with an earlier stored `time`, shown with the stored time struck through; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 5 min before their `time` and red once it's reached (device clock)
 client/
