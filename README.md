@@ -48,7 +48,7 @@ uvicorn app.main:app --reload
 
 Once it's running, open:
 
-- **http://localhost:8000/** for the checklist (anyone can view it; ticking or snoozing items asks for the PIN): active items grouped by group, in `sequence` order; pick a checklist (`type`) from the dropdown or "All"; click an item to mark it done (sets `activated`), click again to undo; pending items turn yellow 1 minute before their `time` and red once it has passed
+- **http://localhost:8000/** for the checklist (anyone can view it; ticking or snoozing items asks for the PIN; every item is unticked and un-snoozed automatically at the start of each day, server time): active items grouped by group, in `sequence` order; pick a checklist (`type`) from the dropdown or "All"; click an item to mark it done (sets `activated`), click again to undo; pending items turn yellow 1 minute before their `time` and red once it has passed
 - **http://localhost:8000/admin** for the editor (asks for the admin login): create, edit and delete items, and reset a checklist (mark all its items as not done)
 - **http://localhost:8000/report** for the daily activity report (asks for the admin login): for each day, every item ticked done (and undone, snoozed or reset) with the time it happened, the time it was due and how early or late it was; filter by checklist
 - **http://localhost:8000/docs** for the interactive API docs

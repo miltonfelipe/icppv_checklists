@@ -51,6 +51,15 @@ class ActivityLog(Base):
     minutes = Column(Integer, nullable=True)
 
 
+class AppState(Base):
+    """Small key/value store for server bookkeeping (e.g. the date of the last daily reset)."""
+
+    __tablename__ = "app_state"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+
+
 _HHMM = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 
 

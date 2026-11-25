@@ -1,4 +1,6 @@
+import logging
 import os
+from contextlib import asynccontextmanager
 import re
 import secrets
 import threading
@@ -15,10 +17,11 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.database import Base, engine, get_db
+from app.database import Base, SessionLocal, engine, get_db
 from app.models import (
     ActivatedUpdate,
     ActivityLog,
+    AppState,
     ChecklistItem,
     ItemCreate,
     ItemResponse,
@@ -30,7 +33,17 @@ from app.models import (
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="ICPPV Checklists API")
+logger = logging.getLogger("uvicorn.error")  # shows up in the server log
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Clears the checklists every new day; see daily_reset below.
+    threading.Thread(target=_daily_reset_loop, name="daily-reset", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="ICPPV Checklists API", lifespan=lifespan)
 
 STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_HTML = STATIC_DIR / "admin.html"
@@ -176,6 +189,54 @@ def log_event(db: Session, action: str, source: str, item: Optional[ChecklistIte
     db.add(ActivityLog(at=datetime.now().replace(microsecond=0), action=action, source=source, **fields))
 
 
+# --- Daily reset ---------------------------------------------------------------
+# Every new day (server local time) all items are marked not done and their snoozes
+# dropped. The date of the last reset is kept in app_state, so a server that was down
+# at midnight resets when it starts, and a restart during the day changes nothing.
+DAILY_RESET_KEY = "last_daily_reset"
+DAILY_RESET_CHECK_SECONDS = 30
+
+
+def _reset_items(db: Session, type: Optional[str] = None) -> int:
+    """Mark items not done and drop their snoozes (all, or one type); returns how many changed."""
+    q = db.query(ChecklistItem).filter(
+        or_(ChecklistItem.activated.is_(True), ChecklistItem.snooze != 0)
+    )
+    if type is not None:
+        q = q.filter(ChecklistItem.type == type)
+    return q.update(
+        {ChecklistItem.activated: False, ChecklistItem.snooze: 0}, synchronize_session=False
+    )
+
+
+def daily_reset() -> None:
+    """Reset all checklists once per day; the first run only records today's date."""
+    today = Date.today().isoformat()
+    with SessionLocal() as db:
+        state = db.get(AppState, DAILY_RESET_KEY)
+        if state is None:
+            # First start with this feature: don't wipe the ticks of the day in progress.
+            db.add(AppState(key=DAILY_RESET_KEY, value=today))
+        elif state.value != today:
+            reset = _reset_items(db)
+            if reset:
+                log_event(db, "reset", "daily", minutes=reset)
+            state.value = today
+            logger.info("Daily reset for %s: %d item(s) cleared", today, reset)
+        else:
+            return
+        db.commit()
+
+
+def _daily_reset_loop() -> None:
+    while True:
+        try:
+            daily_reset()
+        except Exception:
+            logger.exception("Daily reset failed")
+        time.sleep(DAILY_RESET_CHECK_SECONDS)
+
+
 @app.get("/", include_in_schema=False)
 def checklist_ui():
     return FileResponse(CHECKLIST_HTML)
@@ -283,14 +344,7 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)):
 @app.post("/items/reset", dependencies=[Depends(require_admin)])
 def reset_items(type: Optional[str] = None, db: Session = Depends(get_db)):
     """Mark every item as not done (activated = false) and drop snoozes, optionally only for one type."""
-    q = db.query(ChecklistItem).filter(
-        or_(ChecklistItem.activated.is_(True), ChecklistItem.snooze != 0)
-    )
-    if type is not None:
-        q = q.filter(ChecklistItem.type == type)
-    reset = q.update(
-        {ChecklistItem.activated: False, ChecklistItem.snooze: 0}, synchronize_session=False
-    )
+    reset = _reset_items(db, type)
     if reset:
         log_event(db, "reset", "admin", type=type, minutes=reset)
     db.commit()

@@ -126,7 +126,10 @@ function eventLabel(entry) {
     case "done": return { text: "✓ Done", cls: "done" };
     case "undone": return { text: "Undone", cls: "" };
     case "snooze": return { text: entry.minutes ? `Snoozed (+${entry.minutes} min)` : "Snooze undone", cls: "" };
-    case "reset": return { text: `Reset (${entry.minutes} item${entry.minutes === 1 ? "" : "s"})`, cls: "" };
+    case "reset": {
+      const what = entry.source === "daily" ? "New day reset" : "Reset";
+      return { text: `${what} (${entry.minutes} item${entry.minutes === 1 ? "" : "s"})`, cls: "" };
+    }
     default: return { text: entry.action, cls: "" };
   }
 }

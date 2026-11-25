@@ -42,7 +42,7 @@ Once the server is running:
 ```
 app/
   database.py   SQLAlchemy engine, session factory, and get_db dependency
-  models.py     ORM models (ChecklistItem, ActivityLog) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse, LogResponse, LogDay)
+  models.py     ORM models (ChecklistItem, ActivityLog, AppState) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse, LogResponse, LogDay)
   main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin), checklist PIN check (require_pin: X-ICPPV-PIN header or admin login; global 5-failure / 5-min lockout, in memory)
   static/icon.svg  App icon (served at /icon.svg and /favicon.ico); apple-touch-icon.png, icon-192.png, icon-512.png are PNG renders of it for phone home screens, listed in manifest.webmanifest (regenerate with `python3 make_icons.py`, which needs Pillow and must be kept in sync with the SVG by hand)
   static/report.html  Daily activity report at /report (admin): pick a day (from /logs/days) and optionally a type; tables per type of each logged event with its server time, the item's due time then, and how early/late a "done" was (ticking within the due minute is on time)
@@ -58,6 +58,8 @@ checklists.db   SQLite file created at runtime in the repo root
 The database has a single table `items` with columns: `id, type, group, description, active, activated, time, sequence`. `active` and `activated` are booleans; `time` is an optional time of day at which the task must be performed, always 24-hour `HH:MM` text in the API, web UI and CLI (validated and serialized by the `Clock` type in `models.py`; stored as SQLite TIME); `sequence` is an optional integer giving the item's position in its checklist (items without one sort last); `snooze` is the number of minutes checklist users have snoozed that item (default 0); it also shifts every item of the same type with a later `time`, so an item's effective due time is its `time` plus its own snooze and the snoozes of all items of its type with an earlier `time` (computed in checklist.html; the stored `time` never changes, and ordering ignores snoozes). `GET /items` returns items ordered by `time` (items without one last), then `sequence`, then `id`.
 
 The `activity_log` table records checklist use for the report: one row per real change (`done`, `undone`, `snooze` with `minutes` = new snooze, admin `reset` with `minutes` = items reset), with `at` (server local time, to the second), `source` (`checklist` or `admin`), and copies of the item's `item_id, type, group, description` plus `due` (its effective due time at that moment, snoozes included; computed by `_effective_due` in main.py, mirroring checklist.html). Setting a value an item already has logs nothing. Rows are never deleted.
+
+Daily reset: a background thread (started in the app's lifespan, `_daily_reset_loop`) checks every 30 s whether the server's local date differs from `app_state["last_daily_reset"]`; if so it marks every item not done and drops all snoozes (as `POST /items/reset` does), logs a `reset` with `source = "daily"`, and stores today's date. With no stored date yet it only records today (so deploying mid-day keeps the day's ticks); a server that was down at midnight resets when it starts. `app_state` is a key/value table (`AppState` in models.py).
 
 `group` is a SQL reserved word — the ORM column is declared with an explicit name `Column("group", String)` so SQLAlchemy quotes it correctly.
 
