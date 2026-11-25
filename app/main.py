@@ -1,11 +1,15 @@
 import os
+import re
 import secrets
+import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -32,6 +36,13 @@ ADMIN_REALM = "ICPPV admin"
 basic_auth = HTTPBasic(realm=ADMIN_REALM)
 
 
+def _admin_ok(credentials: HTTPBasicCredentials, password: str) -> bool:
+    user = os.environ.get("ICPPV_ADMIN_USER", "admin")
+    user_ok = secrets.compare_digest(credentials.username.encode(), user.encode())
+    password_ok = secrets.compare_digest(credentials.password.encode(), password.encode())
+    return user_ok and password_ok
+
+
 def require_admin(credentials: HTTPBasicCredentials = Depends(basic_auth)):
     """HTTP Basic auth against ICPPV_ADMIN_USER / ICPPV_ADMIN_PASSWORD.
 
@@ -43,15 +54,87 @@ def require_admin(credentials: HTTPBasicCredentials = Depends(basic_auth)):
             status_code=503,
             detail="Editing is disabled: set ICPPV_ADMIN_PASSWORD on the server",
         )
-    user = os.environ.get("ICPPV_ADMIN_USER", "admin")
-    user_ok = secrets.compare_digest(credentials.username.encode(), user.encode())
-    password_ok = secrets.compare_digest(credentials.password.encode(), password.encode())
-    if not (user_ok and password_ok):
+    if not _admin_ok(credentials, password):
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password",
             headers={"WWW-Authenticate": f'Basic realm="{ADMIN_REALM}"'},
         )
+
+
+# --- Checklist PIN -----------------------------------------------------------
+# Anyone can view the checklist; ticking items and snoozing them needs the 4-digit
+# ICPPV_PIN, sent in the X-ICPPV-PIN header (the admin login is accepted instead).
+# A 4-digit PIN is easy to guess, so after PIN_MAX_FAILURES wrong PINs in a row all
+# PIN checks are refused for PIN_LOCKOUT_SECONDS. The counter is global, not per
+# client, because behind a proxy (e.g. tailscale funnel) every client has the same IP.
+PIN_HEADER = "X-ICPPV-PIN"
+PIN_MAX_FAILURES = 5
+PIN_LOCKOUT_SECONDS = 5 * 60
+
+_pin_lock = threading.Lock()
+_pin_failures = 0
+_pin_locked_until = 0.0
+
+optional_basic_auth = HTTPBasic(auto_error=False)
+
+
+def _configured_pin() -> str:
+    pin = os.environ.get("ICPPV_PIN", "")
+    if not re.fullmatch(r"\d{4}", pin):
+        raise HTTPException(
+            status_code=503,
+            detail="Checklist actions are disabled: set ICPPV_PIN (4 digits) on the server",
+        )
+    return pin
+
+
+def _check_pin(pin: str) -> None:
+    """Raise 429 while locked out, 401 for a wrong PIN; counts failures."""
+    global _pin_failures, _pin_locked_until
+    expected = _configured_pin()
+    with _pin_lock:
+        wait = _pin_locked_until - time.monotonic()
+        if wait > 0:
+            minutes = -(-int(wait) // 60)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many wrong PINs; try again in {minutes} min",
+                headers={"Retry-After": str(int(wait) + 1)},
+            )
+        if secrets.compare_digest(pin.encode(), expected.encode()):
+            _pin_failures = 0
+            return
+        _pin_failures += 1
+        if _pin_failures >= PIN_MAX_FAILURES:
+            _pin_failures = 0
+            _pin_locked_until = time.monotonic() + PIN_LOCKOUT_SECONDS
+    raise HTTPException(status_code=401, detail="Wrong PIN")
+
+
+def require_pin(
+    pin: Optional[str] = Header(None, alias=PIN_HEADER),
+    credentials: Optional[HTTPBasicCredentials] = Depends(optional_basic_auth),
+):
+    """Allow checklist actions with the right PIN, or with the admin login."""
+    password = os.environ.get("ICPPV_ADMIN_PASSWORD")
+    if credentials is not None and password and _admin_ok(credentials, password):
+        return
+    if pin is None:
+        _configured_pin()  # report a missing server PIN before asking for one
+        raise HTTPException(status_code=401, detail="PIN required")
+    _check_pin(pin)
+
+
+class PinCheck(BaseModel):
+    pin: str
+
+
+@app.post("/pin", status_code=204, include_in_schema=False)
+def verify_pin(payload: PinCheck):
+    """Let the checklist page check a PIN before remembering it (204 if right)."""
+    _check_pin(payload.pin)
+    return Response(status_code=204)
 
 
 @app.get("/", include_in_schema=False)
@@ -160,9 +243,9 @@ def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
     return item
 
 
-@app.put("/items/{item_id}/activated", response_model=ItemResponse)
+@app.put("/items/{item_id}/activated", response_model=ItemResponse, dependencies=[Depends(require_pin)])
 def set_activated(item_id: int, payload: ActivatedUpdate, db: Session = Depends(get_db)):
-    """Mark an item done / not done. Open (no login) so the checklist can be used by anyone."""
+    """Mark an item done / not done. Needs the checklist PIN (or the admin login), not an account."""
     item = db.get(ChecklistItem, item_id)
     # Inactive items are not part of the checklist, so they can't be ticked either.
     if item is None or not item.active:
@@ -173,9 +256,9 @@ def set_activated(item_id: int, payload: ActivatedUpdate, db: Session = Depends(
     return item
 
 
-@app.put("/items/{item_id}/snooze", response_model=ItemResponse)
+@app.put("/items/{item_id}/snooze", response_model=ItemResponse, dependencies=[Depends(require_pin)])
 def set_snooze(item_id: int, payload: SnoozeUpdate, db: Session = Depends(get_db)):
-    """Postpone an item by some minutes past its stored time. Open, like set_activated."""
+    """Postpone an item by some minutes past its stored time. Needs the PIN, like set_activated."""
     item = db.get(ChecklistItem, item_id)
     if item is None or not item.active:
         raise HTTPException(status_code=404, detail="Item not found")

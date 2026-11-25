@@ -42,7 +42,10 @@ def _abort(exc: requests.HTTPError) -> None:
         detail = str(exc)
     console.print(f"[red]Error {exc.response.status_code}:[/red] {detail}")
     if exc.response.status_code == 401:
-        console.print("[yellow]Set ICPPV_ADMIN_USER and ICPPV_ADMIN_PASSWORD to the server's admin login.[/yellow]")
+        console.print(
+            "[yellow]Set ICPPV_ADMIN_USER and ICPPV_ADMIN_PASSWORD to the server's admin login"
+            " (or, for --activated/--snooze only, ICPPV_PIN to the checklist PIN).[/yellow]"
+        )
     raise typer.Exit(1)
 
 
@@ -161,7 +164,7 @@ def update_item(
 
     try:
         client = _client(url)
-        # Snoozing and ticking an item done / not done don't need the admin login.
+        # Snoozing and ticking an item done / not done only need the checklist PIN.
         if snooze is not None:
             item = client.set_snooze(item_id, snooze)
         if fields.keys() == {"activated"}:

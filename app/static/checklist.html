@@ -39,6 +39,23 @@
   .header-right { display: flex; align-items: baseline; gap: 12px; }
   .admin-link { color: var(--accent); font-size: 13px; text-decoration: none; }
   .admin-link:hover { text-decoration: underline; }
+  .link-button { font: inherit; font-size: 13px; color: var(--accent); background: none;
+                 border: 0; padding: 0; cursor: pointer; }
+  .link-button:hover { text-decoration: underline; }
+  /* PIN dialog */
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border);
+           border-radius: 10px; padding: 16px; width: min(320px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 { margin-bottom: 4px; }
+  dialog p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  #pin-input { width: 100%; font: inherit; font-size: 24px; letter-spacing: .5em; text-align: center;
+               color: var(--text); background: var(--bg); border: 1px solid var(--border);
+               border-radius: 6px; padding: 8px; }
+  #pin-error { min-height: 1.4em; margin: 6px 0; color: var(--danger); font-size: 13px; }
+  .dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  .dialog-buttons button { font: inherit; border-radius: 6px; padding: 6px 14px; cursor: pointer;
+                           border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+  .dialog-buttons button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   #status { min-height: 1.4em; margin-bottom: 8px; color: var(--danger); }
   section { background: var(--panel); border: 1px solid var(--border);
             border-radius: 8px; padding: 12px; margin-bottom: 16px; }
@@ -76,6 +93,7 @@
     <h1>ICPPV Checklist</h1>
     <div class="header-right">
       <span id="progress"></span>
+      <button type="button" id="lock" class="link-button" hidden title="Forget the PIN on this tab">Lock</button>
       <a class="admin-link" href="/admin">Admin</a>
     </div>
   </header>
@@ -86,6 +104,20 @@
   <div id="status"></div>
   <div id="groups"><p class="muted">Loading…</p></div>
 </main>
+
+<dialog id="pin-dialog">
+  <form id="pin-form" method="dialog">
+    <h2>Enter PIN</h2>
+    <p>A 4-digit PIN is needed to change the checklist.</p>
+    <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+           autocomplete="off" required aria-label="PIN">
+    <div id="pin-error" role="alert"></div>
+    <div class="dialog-buttons">
+      <button type="button" id="pin-cancel">Cancel</button>
+      <button type="submit" class="primary">OK</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 const groupsEl = document.getElementById("groups");
@@ -123,9 +155,90 @@ typeEl.addEventListener("change", () => {
 function setStatus(msg) { statusEl.textContent = msg || ""; }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  const headers = { "Content-Type": "application/json" };
+  if (pin) headers["X-ICPPV-PIN"] = pin;
+  const res = await fetch(path, { headers, ...options });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch {}
+    const err = new Error(`${res.status} ${detail}`);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// --- PIN --------------------------------------------------------------------
+// Viewing is open; ticking and snoozing need the 4-digit PIN. Once accepted it is
+// kept for this tab only (sessionStorage), so closing the tab forgets it.
+const PIN_KEY = "icppv-pin";
+const pinDialog = document.getElementById("pin-dialog");
+const pinForm = document.getElementById("pin-form");
+const pinInput = document.getElementById("pin-input");
+const pinError = document.getElementById("pin-error");
+const lockBtn = document.getElementById("lock");
+let pin = null;
+try { pin = sessionStorage.getItem(PIN_KEY); } catch {}
+
+function setPin(value) {
+  pin = value;
+  try {
+    if (value) sessionStorage.setItem(PIN_KEY, value);
+    else sessionStorage.removeItem(PIN_KEY);
+  } catch {}
+  lockBtn.hidden = !value;
+}
+setPin(pin);
+lockBtn.addEventListener("click", () => setPin(null));
+
+// Shows the PIN dialog; resolves true once the server accepts a PIN, false if cancelled.
+function askPin(message = "") {
+  return new Promise(resolve => {
+    pinInput.value = "";
+    pinError.textContent = message;
+    const finish = ok => {
+      pinForm.removeEventListener("submit", onSubmit);
+      pinDialog.removeEventListener("close", onClose);
+      document.getElementById("pin-cancel").onclick = null;
+      if (pinDialog.open) pinDialog.close();
+      resolve(ok);
+    };
+    const onClose = () => finish(false);  // Esc key
+    const onSubmit = async e => {
+      e.preventDefault();
+      const value = pinInput.value.trim();
+      if (!/^\d{4}$/.test(value)) { pinError.textContent = "Enter the 4 digits."; return; }
+      try {
+        await api("/pin", { method: "POST", body: JSON.stringify({ pin: value }) });
+        setPin(value);
+        finish(true);
+      } catch (err) {
+        pinError.textContent = err.status === 401 ? "Wrong PIN." : err.detail || err.message;
+        pinInput.value = "";
+        pinInput.focus();
+      }
+    };
+    pinForm.addEventListener("submit", onSubmit);
+    pinDialog.addEventListener("close", onClose);
+    document.getElementById("pin-cancel").onclick = () => finish(false);
+    pinDialog.showModal();
+    pinInput.focus();
+  });
+}
+
+// Runs a checklist action, asking for the PIN first if this tab has none, and again
+// if the server rejects the remembered one (e.g. the PIN was changed).
+async function withPin(action) {
+  if (!pin && !(await askPin())) return null;
+  try {
+    return await action();
+  } catch (e) {
+    if (e.status !== 401) throw e;
+    setPin(null);
+    if (!(await askPin("The PIN was not accepted; enter it again."))) return null;
+    return await action();
+  }
 }
 
 function render() {
@@ -219,10 +332,11 @@ async function toggle(item, btn) {
   btn.disabled = true;
   pendingToggles++;
   try {
-    const updated = await api(`/items/${item.id}/activated`, {
+    const updated = await withPin(() => api(`/items/${item.id}/activated`, {
       method: "PUT",
       body: JSON.stringify({ activated: !item.activated }),
-    });
+    }));
+    if (!updated) { btn.disabled = false; return; }  // PIN dialog cancelled
     Object.assign(item, updated);
     setStatus("");
     render();
@@ -282,10 +396,11 @@ async function setSnooze(item, btn, snooze) {
   btn.disabled = true;
   pendingToggles++;
   try {
-    const updated = await api(`/items/${item.id}/snooze`, {
+    const updated = await withPin(() => api(`/items/${item.id}/snooze`, {
       method: "PUT",
       body: JSON.stringify({ snooze }),
-    });
+    }));
+    if (!updated) { btn.disabled = false; return; }  // PIN dialog cancelled
     Object.assign(item, updated);
     setStatus("");
     render();

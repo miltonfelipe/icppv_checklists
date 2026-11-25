@@ -13,6 +13,10 @@ class ChecklistClient:
         password = os.environ.get("ICPPV_ADMIN_PASSWORD")
         if password:
             self.session.auth = (os.environ.get("ICPPV_ADMIN_USER", "admin"), password)
+        # Ticking and snoozing items needs the checklist PIN (or the admin login above).
+        pin = os.environ.get("ICPPV_PIN")
+        if pin:
+            self.session.headers["X-ICPPV-PIN"] = pin
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -77,13 +81,13 @@ class ChecklistClient:
         return r.json()
 
     def set_activated(self, item_id: int, activated: bool) -> dict:
-        """Mark an item done / not done (no admin login needed)."""
+        """Mark an item done / not done (needs ICPPV_PIN or the admin login)."""
         r = self.session.put(self._url(f"/items/{item_id}/activated"), json={"activated": activated})
         r.raise_for_status()
         return r.json()
 
     def set_snooze(self, item_id: int, minutes: int) -> dict:
-        """Postpone an item this many minutes past its time, 0 to undo (no admin login needed)."""
+        """Postpone an item this many minutes past its time, 0 to undo (needs ICPPV_PIN or the admin login)."""
         r = self.session.put(self._url(f"/items/{item_id}/snooze"), json={"snooze": minutes})
         r.raise_for_status()
         return r.json()

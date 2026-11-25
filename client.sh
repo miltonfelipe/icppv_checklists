@@ -4,6 +4,7 @@
 # Settings come from the environment, or from a .env file next to this script:
 #   ICPPV_SERVER_URL      server address (default: http://localhost:8000)
 #   ICPPV_ADMIN_USER / ICPPV_ADMIN_PASSWORD   needed for create/update/delete
+#   ICPPV_PIN             checklist PIN, enough for update --activated/--snooze
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

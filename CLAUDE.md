@@ -24,6 +24,7 @@ python3 make_icons.py  # redraw the PNG phone icons in app/static/ after changin
 
 # Run the server (reloads on file change); editing needs an admin password
 export ICPPV_ADMIN_PASSWORD='choose-a-password'   # ICPPV_ADMIN_USER defaults to "admin"
+export ICPPV_PIN=1234                             # 4-digit PIN to tick/snooze checklist items
 uvicorn app.main:app --reload
 
 # Run on a specific port
@@ -31,7 +32,7 @@ uvicorn app.main:app --reload --port 8080
 ```
 
 Once the server is running:
-- Checklist UI (open): `http://localhost:8000/`
+- Checklist UI (view open, actions need the PIN): `http://localhost:8000/`
 - Editor UI (admin login): `http://localhost:8000/admin`
 - Interactive API docs: `http://localhost:8000/docs`
 
@@ -41,10 +42,10 @@ Once the server is running:
 app/
   database.py   SQLAlchemy engine, session factory, and get_db dependency
   models.py     ORM model (ChecklistItem) + Pydantic schemas (ItemCreate, ItemUpdate, ItemResponse)
-  main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin)
+  main.py       FastAPI app; creates tables on startup, defines all routes, HTTP Basic admin auth (require_admin), checklist PIN check (require_pin: X-ICPPV-PIN header or admin login; global 5-failure / 5-min lockout, in memory)
   static/icon.svg  App icon (served at /icon.svg and /favicon.ico); apple-touch-icon.png, icon-192.png, icon-512.png are PNG renders of it for phone home screens, listed in manifest.webmanifest (regenerate with `python3 make_icons.py`, which needs Pillow and must be kept in sync with the SVG by hand)
   static/admin.html  Editor UI at /admin (plain HTML/JS, no build step) that calls the /items API
-  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions (with their `time`, if any, on the right) grouped by group, ordered by `time`, then `sequence`; clicking toggles `activated` via the open PUT /items/{id}/activated; pending items with a time get a `+5` snooze button (and `↺` to undo it) that adds to the item's own `snooze` via the open PUT /items/{id}/snooze; an item's due time is pushed back by its own snooze plus those of all items of the same type with an earlier stored `time`, shown with the stored time struck through; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 5 min before their `time` and red once it's reached (device clock)
+  static/checklist.html  Checklist UI: dropdown selects a `type` (or All, kept in `?type=`); shows active items' descriptions (with their `time`, if any, on the right) grouped by group, ordered by `time`, then `sequence`; clicking toggles `activated` via PUT /items/{id}/activated; actions first ask for the PIN in a <dialog> (checked with POST /pin, kept in sessionStorage until the tab closes or "Lock" is clicked, re-asked on a 401); pending items with a time get a `+5` snooze button (and `↺` to undo it) that adds to the item's own `snooze` via PUT /items/{id}/snooze; an item's due time is pushed back by its own snooze plus those of all items of the same type with an earlier stored `time`, shown with the stored time struck through; re-fetches every 30 s and when the tab becomes visible; pending items turn yellow from 5 min before their `time` and red once it's reached (device clock)
 client/
   api.py        Thin requests wrapper (ChecklistClient) — usable as a library
   cli.py        Typer CLI; each command delegates to ChecklistClient
@@ -66,8 +67,10 @@ pip install -r client/requirements.txt
 
 # Point at the server (set once, or pass --url on every command)
 export ICPPV_SERVER_URL=http://<server-ip>:8000
-# Needed for create/update/delete (update with only --activated/--no-activated and/or --snooze works without it)
+# Needed for create/update/delete
 export ICPPV_ADMIN_USER=admin ICPPV_ADMIN_PASSWORD='the-server-password'
+# Enough for update with only --activated/--no-activated and/or --snooze
+export ICPPV_PIN=1234
 
 # Run
 python3 -m client --help
@@ -102,8 +105,10 @@ python3 -m client delete 3
 | POST | `/items` | Create an item (201) (admin) |
 | POST | `/items/reset` | Set `activated = false` and `snooze = 0` on all items, or only `?type=`; returns `{"reset": n}` (admin) |
 | PUT | `/items/{id}` | Partial update (admin) |
-| PUT | `/items/{id}/activated` | Set only `activated`, body `{"activated": true}` (open; 404 for inactive items) |
-| PUT | `/items/{id}/snooze` | Set only `snooze` (minutes past `time`, 0–1440), body `{"snooze": 10}` (open; 404 for inactive items, 422 if the item has no time) |
+| POST | `/pin` | Check a checklist PIN, body `{"pin": "1234"}`; 204 if right, 401 if wrong, 429 while locked out |
+| PUT | `/items/{id}/activated` | Set only `activated`, body `{"activated": true}` (PIN; 404 for inactive items) |
+| PUT | `/items/{id}/snooze` | Set only `snooze` (minutes past `time`, 0–1440), body `{"snooze": 10}` (PIN; 404 for inactive items, 422 if the item has no time) |
 | DELETE | `/items/{id}` | Delete (204) (admin) |
 
 "(admin)" routes require HTTP Basic auth matching `ICPPV_ADMIN_USER` (default `admin`) / `ICPPV_ADMIN_PASSWORD`; with no password set they return 503.
+"(PIN)" routes require the 4-digit `ICPPV_PIN` in an `X-ICPPV-PIN` header (or the admin login); with no valid PIN set they return 503. The start scripts default `ICPPV_PIN` to 2543.
