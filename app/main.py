@@ -26,6 +26,7 @@ app = FastAPI(title="ICPPV Checklists API")
 STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_HTML = STATIC_DIR / "admin.html"
 CHECKLIST_HTML = STATIC_DIR / "checklist.html"
+ICON_SVG = STATIC_DIR / "icon.svg"
 
 ADMIN_REALM = "ICPPV admin"
 basic_auth = HTTPBasic(realm=ADMIN_REALM)
@@ -56,6 +57,12 @@ def require_admin(credentials: HTTPBasicCredentials = Depends(basic_auth)):
 @app.get("/", include_in_schema=False)
 def checklist_ui():
     return FileResponse(CHECKLIST_HTML)
+
+
+@app.get("/icon.svg", include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
+def icon():
+    return FileResponse(ICON_SVG, media_type="image/svg+xml")
 
 
 @app.get("/checklist", include_in_schema=False)
