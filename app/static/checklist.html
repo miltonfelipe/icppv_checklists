@@ -32,6 +32,9 @@
   select { font: inherit; color: var(--text); background: var(--panel);
            border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-width: 180px; }
   #progress { color: var(--muted); font-size: 13px; }
+  .header-right { display: flex; align-items: baseline; gap: 12px; }
+  .admin-link { color: var(--accent); font-size: 13px; text-decoration: none; }
+  .admin-link:hover { text-decoration: underline; }
   #status { min-height: 1.4em; margin-bottom: 8px; color: var(--danger); }
   section { background: var(--panel); border: 1px solid var(--border);
             border-radius: 8px; padding: 12px; margin-bottom: 16px; }
@@ -67,7 +70,10 @@
 <main>
   <header>
     <h1>ICPPV Checklist</h1>
-    <span id="progress"></span>
+    <div class="header-right">
+      <span id="progress"></span>
+      <a class="admin-link" href="/admin">Admin</a>
+    </div>
   </header>
   <div class="toolbar">
     <label for="type">Checklist</label>
