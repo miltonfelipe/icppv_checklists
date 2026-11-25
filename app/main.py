@@ -3,7 +3,7 @@ import secrets
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import or_
@@ -63,6 +63,19 @@ def checklist_ui():
 @app.get("/favicon.ico", include_in_schema=False)
 def icon():
     return FileResponse(ICON_SVG, media_type="image/svg+xml")
+
+
+# Home-screen icons for phones (iOS requests /apple-touch-icon.png on its own).
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+@app.get("/icon-192.png", include_in_schema=False)
+@app.get("/icon-512.png", include_in_schema=False)
+def png_icon(request: Request):
+    return FileResponse(STATIC_DIR / request.url.path.lstrip("/"), media_type="image/png")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
 @app.get("/checklist", include_in_schema=False)
