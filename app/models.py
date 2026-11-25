@@ -1,9 +1,10 @@
 import re
+from datetime import datetime
 from datetime import time as TimeOfDay
 from typing import Annotated, Optional
 
 from pydantic import BaseModel, BeforeValidator, Field, PlainSerializer
-from sqlalchemy import Boolean, Column, Integer, String, Time, text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Time, text
 
 from app.database import Base
 
@@ -23,6 +24,31 @@ class ChecklistItem(Base):
     sequence = Column(Integer, nullable=True)
     # Minutes the item is postponed past its time by users of the checklist; cleared by reset.
     snooze = Column(Integer, default=0, server_default=text("0"), nullable=False)
+
+
+class ActivityLog(Base):
+    """One row per change made while using the checklists, for the /report page.
+
+    Item fields are copied at the time of the event, so the log still reads right
+    after the item is edited or deleted.
+    """
+
+    __tablename__ = "activity_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # Server local time, to the second.
+    at = Column(DateTime, nullable=False, index=True)
+    # "done", "undone", "snooze" (minutes = new snooze) or "reset" (minutes = items reset).
+    action = Column(String, nullable=False)
+    # "checklist" (PIN) or "admin".
+    source = Column(String, nullable=False)
+    item_id = Column(Integer, nullable=True)  # None for "reset"
+    type = Column(String, nullable=True)  # None for a reset of all checklists
+    group = Column("group", String, nullable=True)
+    description = Column(String, nullable=True)
+    # When the item was due at that moment: its time pushed back by the snoozes in effect.
+    due = Column(Time, nullable=True)
+    minutes = Column(Integer, nullable=True)
 
 
 _HHMM = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
@@ -72,6 +98,26 @@ class ActivatedUpdate(BaseModel):
 class SnoozeUpdate(BaseModel):
     # Minutes after the stored time; 0 removes the snooze.
     snooze: int = Field(ge=0, le=24 * 60)
+
+
+class LogResponse(BaseModel):
+    id: int
+    at: datetime
+    action: str
+    source: str
+    item_id: Optional[int]
+    type: Optional[str]
+    group: Optional[str]
+    description: Optional[str]
+    due: Optional[Clock]
+    minutes: Optional[int]
+
+    model_config = {"from_attributes": True}
+
+
+class LogDay(BaseModel):
+    date: str  # YYYY-MM-DD
+    count: int
 
 
 class ItemResponse(BaseModel):

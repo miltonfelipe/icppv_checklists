@@ -3,6 +3,8 @@ import re
 import secrets
 import threading
 import time
+from datetime import date as Date
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -10,16 +12,19 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
 from app.models import (
     ActivatedUpdate,
+    ActivityLog,
     ChecklistItem,
     ItemCreate,
     ItemResponse,
     ItemUpdate,
+    LogDay,
+    LogResponse,
     SnoozeUpdate,
 )
 
@@ -30,6 +35,7 @@ app = FastAPI(title="ICPPV Checklists API")
 STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_HTML = STATIC_DIR / "admin.html"
 CHECKLIST_HTML = STATIC_DIR / "checklist.html"
+REPORT_HTML = STATIC_DIR / "report.html"
 ICON_SVG = STATIC_DIR / "icon.svg"
 
 ADMIN_REALM = "ICPPV admin"
@@ -137,6 +143,39 @@ def verify_pin(payload: PinCheck):
     return Response(status_code=204)
 
 
+# --- Activity log -------------------------------------------------------------
+
+
+def _effective_due(db: Session, item: ChecklistItem):
+    """The item's time pushed back by its own snooze and those of the earlier items of its
+    type, as the checklist page shows it (see snoozeShifts in checklist.html)."""
+    if item.time is None:
+        return None
+    earlier = (
+        db.query(func.coalesce(func.sum(ChecklistItem.snooze), 0))
+        .filter(
+            ChecklistItem.type == item.type,
+            ChecklistItem.active.is_(True),
+            ChecklistItem.time.is_not(None),
+            ChecklistItem.time < item.time,
+        )
+        .scalar()
+    )
+    due = datetime.combine(Date.today(), item.time) + timedelta(minutes=item.snooze + earlier)
+    return due.time()
+
+
+def log_event(db: Session, action: str, source: str, item: Optional[ChecklistItem] = None, **fields):
+    """Add an activity_log row to the current transaction (committed with the change)."""
+    if item is not None:
+        fields.setdefault("item_id", item.id)
+        fields.setdefault("type", item.type)
+        fields.setdefault("group", item.group)
+        fields.setdefault("description", item.description)
+        fields.setdefault("due", _effective_due(db, item))
+    db.add(ActivityLog(at=datetime.now().replace(microsecond=0), action=action, source=source, **fields))
+
+
 @app.get("/", include_in_schema=False)
 def checklist_ui():
     return FileResponse(CHECKLIST_HTML)
@@ -169,6 +208,31 @@ def old_checklist_url():
 @app.get("/admin", include_in_schema=False, dependencies=[Depends(require_admin)])
 def admin_ui():
     return FileResponse(ADMIN_HTML)
+
+
+@app.get("/report", include_in_schema=False, dependencies=[Depends(require_admin)])
+def report_ui():
+    return FileResponse(REPORT_HTML)
+
+
+@app.get("/logs/days", response_model=List[LogDay], dependencies=[Depends(require_admin)])
+def log_days(db: Session = Depends(get_db)):
+    """Days that have activity, newest first, with their number of log entries."""
+    day = func.date(ActivityLog.at)
+    rows = db.query(day, func.count()).group_by(day).order_by(day.desc()).all()
+    return [{"date": d, "count": n} for d, n in rows]
+
+
+@app.get("/logs", response_model=List[LogResponse], dependencies=[Depends(require_admin)])
+def list_logs(date: Optional[Date] = None, type: Optional[str] = None, db: Session = Depends(get_db)):
+    """Activity of one day (default: today, server time) in time order; optionally one type."""
+    start = datetime.combine(date or Date.today(), datetime.min.time())
+    q = db.query(ActivityLog).filter(
+        ActivityLog.at >= start, ActivityLog.at < start + timedelta(days=1)
+    )
+    if type is not None:
+        q = q.filter(ActivityLog.type == type)
+    return q.order_by(ActivityLog.at, ActivityLog.id).all()
 
 
 @app.get("/items", response_model=List[ItemResponse])
@@ -227,6 +291,8 @@ def reset_items(type: Optional[str] = None, db: Session = Depends(get_db)):
     reset = q.update(
         {ChecklistItem.activated: False, ChecklistItem.snooze: 0}, synchronize_session=False
     )
+    if reset:
+        log_event(db, "reset", "admin", type=type, minutes=reset)
     db.commit()
     return {"reset": reset}
 
@@ -236,8 +302,12 @@ def update_item(item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
     item = db.get(ChecklistItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    was_activated = item.activated
+    for field, value in changes.items():
         setattr(item, field, value)
+    if "activated" in changes and item.activated != was_activated:
+        log_event(db, "done" if item.activated else "undone", "admin", item)
     db.commit()
     db.refresh(item)
     return item
@@ -250,7 +320,9 @@ def set_activated(item_id: int, payload: ActivatedUpdate, db: Session = Depends(
     # Inactive items are not part of the checklist, so they can't be ticked either.
     if item is None or not item.active:
         raise HTTPException(status_code=404, detail="Item not found")
-    item.activated = payload.activated
+    if item.activated != payload.activated:
+        item.activated = payload.activated
+        log_event(db, "done" if item.activated else "undone", "checklist", item)
     db.commit()
     db.refresh(item)
     return item
@@ -264,7 +336,10 @@ def set_snooze(item_id: int, payload: SnoozeUpdate, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Item not found")
     if item.time is None and payload.snooze:
         raise HTTPException(status_code=422, detail="Item has no time to snooze")
-    item.snooze = payload.snooze
+    if item.snooze != payload.snooze:
+        item.snooze = payload.snooze
+        db.flush()  # so the logged due time includes the new snooze
+        log_event(db, "snooze", "checklist", item, minutes=payload.snooze)
     db.commit()
     db.refresh(item)
     return item

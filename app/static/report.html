@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#2563eb">
+<title>ICPPV Checklist Report</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7280;
+    --border: #d9dde3; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a;
+    --late-text: #b91c1c; --early-text: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1d2128; --text: #e6e8eb; --muted: #9aa1ab;
+      --border: #333a44; --accent: #60a5fa; --danger: #f87171; --ok: #4ade80;
+      --late-text: #fca5a5; --early-text: #86efac;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+           flex-wrap: wrap; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  header nav { display: flex; gap: 12px; font-size: 13px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .toolbar { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar label { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  select { font: inherit; color: var(--text); background: var(--panel);
+           border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-width: 160px; }
+  #summary { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  #status { min-height: 1.4em; margin-bottom: 8px; color: var(--danger); }
+  section { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; gap: 8px; }
+  h2 .count { color: var(--muted); font-weight: normal; font-size: 13px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.event { white-space: nowrap; }
+  tr.minor td { color: var(--muted); }
+  .done { color: var(--ok); font-weight: 600; }
+  .late { color: var(--late-text); font-weight: 600; }
+  .early { color: var(--early-text); }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--border);
+         border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  .muted { color: var(--muted); }
+  @media print {
+    .toolbar, header nav { display: none; }
+    section { break-inside: avoid; border-color: #999; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ICPPV Checklist Report</h1>
+    <nav><a href="/">Checklist</a><a href="/admin">Admin</a></nav>
+  </header>
+  <div class="toolbar">
+    <label>Day <select id="day"></select></label>
+    <label>Checklist <select id="type"><option value="">All</option></select></label>
+  </div>
+  <div id="summary"></div>
+  <div id="status"></div>
+  <div id="sections"><p class="muted">Loading…</p></div>
+</main>
+
+<script>
+const dayEl = document.getElementById("day");
+const typeEl = document.getElementById("type");
+const sectionsEl = document.getElementById("sections");
+const summaryEl = document.getElementById("summary");
+const statusEl = document.getElementById("status");
+let logs = [];
+
+// The page asks the browser for the admin login (same as /admin), so fetches reuse it.
+async function api(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+// Day and checklist are kept in the URL (?date=...&type=...) so a report can be bookmarked.
+function setParam(name, value) {
+  const url = new URL(location.href);
+  if (value) url.searchParams.set(name, value); else url.searchParams.delete(name);
+  history.replaceState(null, "", url);
+}
+
+function formatDay(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined,
+    { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+}
+
+// "2026-11-25T08:17:42" -> seconds since midnight / "08:17:42"
+const clockOf = at => at.slice(11, 19);
+const secondsOf = hhmmss => hhmmss.split(":").reduce((t, v) => t * 60 + Number(v), 0);
+
+// How a "done" compares to the time it was due: ticking within the due minute is on time.
+function versusDue(entry) {
+  if (entry.action !== "done" || !entry.due) return null;
+  const diff = Math.floor((secondsOf(clockOf(entry.at)) - secondsOf(entry.due + ":00")) / 60);
+  if (diff === 0) return { text: "on time", cls: "", late: false };
+  if (diff > 0) return { text: `${duration(diff)} late`, cls: "late", late: true };
+  return { text: `${duration(-diff)} early`, cls: "early", late: false };
+}
+
+// 7 -> "7 min", 545 -> "9 h 05 min"
+function duration(min) {
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min`;
+}
+
+function eventLabel(entry) {
+  switch (entry.action) {
+    case "done": return { text: "✓ Done", cls: "done" };
+    case "undone": return { text: "Undone", cls: "" };
+    case "snooze": return { text: entry.minutes ? `Snoozed (+${entry.minutes} min)` : "Snooze undone", cls: "" };
+    case "reset": return { text: `Reset (${entry.minutes} item${entry.minutes === 1 ? "" : "s"})`, cls: "" };
+    default: return { text: entry.action, cls: "" };
+  }
+}
+
+function cell(tr, text, cls) {
+  const td = document.createElement("td");
+  if (cls) td.className = cls;
+  td.textContent = text ?? "";
+  tr.append(td);
+  return td;
+}
+
+function render() {
+  const type = typeEl.value;
+  // A reset of all checklists (type null) is shown under every checklist.
+  const shown = type ? logs.filter(l => l.type === type || l.type === null) : logs;
+  const dones = shown.filter(l => l.action === "done");
+  const late = dones.filter(l => versusDue(l)?.late).length;
+  summaryEl.textContent = shown.length
+    ? `${dones.length} tick${dones.length === 1 ? "" : "s"}` +
+      (late ? `, ${late} after the due time` : "") +
+      ` · ${shown.length} event${shown.length === 1 ? "" : "s"} · times are the server's clock`
+    : "";
+  if (!shown.length) {
+    sectionsEl.innerHTML = '<p class="muted">No activity on this day.</p>';
+    return;
+  }
+
+  const byType = new Map();
+  for (const entry of shown) {
+    const key = entry.type ?? "All checklists";
+    if (!byType.has(key)) byType.set(key, []);
+    byType.get(key).push(entry);
+  }
+
+  sectionsEl.replaceChildren();
+  for (const key of [...byType.keys()].sort((a, b) => a.localeCompare(b))) {
+    const entries = byType.get(key);
+    const section = document.createElement("section");
+    const h2 = document.createElement("h2");
+    h2.textContent = key;
+    const count = document.createElement("span");
+    count.className = "count";
+    const n = entries.filter(e => e.action === "done").length;
+    count.textContent = `${n} tick${n === 1 ? "" : "s"}`;
+    h2.append(count);
+
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Time</th><th>Group</th><th>Item</th><th>Event</th>" +
+                      "<th>Due</th><th>vs due</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const entry of entries) {
+      const tr = document.createElement("tr");
+      if (entry.action !== "done") tr.className = "minor";
+      cell(tr, clockOf(entry.at), "num");
+      cell(tr, entry.group);
+      cell(tr, entry.description);
+      const ev = eventLabel(entry);
+      const evTd = cell(tr, ev.text, `event ${ev.cls}`);
+      if (entry.source === "admin" && entry.action !== "reset") {
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = "admin";
+        evTd.append(tag);
+      }
+      cell(tr, entry.due, "num");
+      const vs = versusDue(entry);
+      cell(tr, vs?.text, `num ${vs?.cls ?? ""}`);
+      tbody.append(tr);
+    }
+    table.append(tbody);
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    wrap.append(table);
+    section.append(h2, wrap);
+    sectionsEl.append(section);
+  }
+}
+
+function renderTypeOptions() {
+  const wanted = new URLSearchParams(location.search).get("type") || typeEl.value;
+  const types = [...new Set(logs.map(l => l.type).filter(t => t !== null))].sort((a, b) => a.localeCompare(b));
+  typeEl.replaceChildren(new Option("All", ""), ...types.map(t => new Option(t, t)));
+  typeEl.value = types.includes(wanted) ? wanted : "";
+}
+
+async function loadDay() {
+  const date = dayEl.value;
+  if (!date) return;
+  try {
+    logs = await api(`/logs?date=${encodeURIComponent(date)}`);
+    setStatus("");
+    renderTypeOptions();
+    render();
+  } catch (e) {
+    setStatus(`Could not load the log: ${e.message}`);
+  }
+}
+
+function setStatus(msg) { statusEl.textContent = msg || ""; }
+
+dayEl.addEventListener("change", () => { setParam("date", dayEl.value); loadDay(); });
+typeEl.addEventListener("change", () => { setParam("type", typeEl.value); render(); });
+
+async function init() {
+  try {
+    const days = await api("/logs/days");
+    if (!days.length) {
+      dayEl.replaceChildren(new Option("No activity yet", ""));
+      sectionsEl.innerHTML = '<p class="muted">Nothing has been logged yet. Ticking items on the checklist adds entries here.</p>';
+      return;
+    }
+    dayEl.replaceChildren(...days.map(d => new Option(`${formatDay(d.date)} (${d.count})`, d.date)));
+    const wanted = new URLSearchParams(location.search).get("date");
+    dayEl.value = days.some(d => d.date === wanted) ? wanted : days[0].date;
+    await loadDay();
+  } catch (e) {
+    setStatus(`Could not load the report: ${e.message}`);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
